@@ -1,0 +1,1045 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TMS · วางแผนเที่ยววิ่ง</title>
+<script>/* ตั้งธีมก่อนวาดหน้า กันจอกระพริบตอนโหลด */
+try{var _t=localStorage.getItem('tms_theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');
+document.documentElement.dataset.theme=_t;}catch(e){document.documentElement.dataset.theme='dark';}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.sheetjs.com/xlsx-0.20.2/package/dist/xlsx.full.min.js"></script>
+<style>
+/* ============================================================
+   ธีม — มืด (ค่าเริ่มต้นตามเครื่อง) / สว่าง · สลับที่ปุ่มมุมขวาบน จำค่าไว้ในเครื่อง
+   โหมดมืด = ใช้ในห้องคุมกลางคืน · โหมดสว่าง = ใช้ในออฟฟิศ/กลางแดด
+   ============================================================ */
+:root{
+  --ink:#0E1520; --panel:#141D2A; --panel2:#1B2636; --line:#26344A;
+  --paper:#E6EDF5; --mute:#8A9CB4;
+  --signal:#F5A524; --live:#2FD3B8; --alert:#E5544B; --dim:#4A5F7D;
+  --on-signal:#12161C; --on-live:#0B1F1B; --on-alert:#FFFFFF;
+  --hint-t:#F2D9A8; --map-bg:var(--map-bg);
+  --shadow:0 6px 22px rgba(0,0,0,.42);
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --ink:#E9EEF5; --panel:#FFFFFF; --panel2:#F2F6FB; --line:#D2DCEA;
+  --paper:#132030; --mute:#566780;
+  --signal:#BE7009; --live:#0B8C79; --alert:#BC3A30; --dim:#8DA0B7;
+  --on-signal:#FFFFFF; --on-live:#FFFFFF; --on-alert:#FFFFFF;
+  --hint-t:#7A4A05; --map-bg:#E4EAF1;
+  --shadow:0 6px 20px rgba(23,42,71,.14);
+  color-scheme:light;
+}
+.thm{background:transparent;border:1px solid var(--line);color:var(--mute);border-radius:9px;
+  padding:7px 9px;cursor:pointer;display:grid;place-items:center;line-height:0;width:auto;flex:none}
+.thm:hover{color:var(--signal);border-color:var(--signal)}
+.thm svg{width:16px;height:16px;display:block}
+*{box-sizing:border-box}
+html,body{margin:0;background:var(--ink);color:var(--paper);
+  font-family:'IBM Plex Sans Thai',system-ui,sans-serif;font-size:14px}
+h1,h2,h3,.disp{font-family:'Anuphan',sans-serif;font-weight:700;margin:0}
+.mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+.top{display:flex;align-items:center;gap:18px;padding:0 22px;height:56px;
+  border-bottom:1px solid var(--line);background:var(--panel);position:sticky;top:0;z-index:40}
+.top h1{font-size:17px} .top .tag{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--signal)}
+.tabs{display:flex;gap:4px;margin-left:auto;flex-wrap:wrap}
+.tab{padding:8px 14px;border-radius:8px;cursor:pointer;color:var(--mute);font-size:13px}
+.tab:hover{background:var(--panel2)} .tab.on{background:var(--panel2);color:var(--signal)}
+.wrap{max-width:1080px;margin:0 auto;padding:22px}
+.pane{display:none} .pane.on{display:block}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:18px;margin-bottom:16px}
+.lbl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute);margin-bottom:10px}
+label.f{display:block;font-size:12px;color:var(--mute);margin:0 0 5px}
+input,select,textarea{width:100%;background:var(--panel2);color:var(--paper);border:1px solid var(--line);
+  border-radius:8px;padding:9px 10px;font-family:inherit;font-size:14px}
+input:focus,select:focus{outline:2px solid var(--signal);outline-offset:-1px}
+button{font-family:inherit;font-size:13px;font-weight:600;border:0;border-radius:9px;padding:10px 16px;cursor:pointer}
+.btn{background:var(--signal);color:var(--on-signal)} .btn:hover{filter:brightness(1.08)}
+.btn-g{background:var(--panel2);color:var(--paper);border:1px solid var(--line)}
+.btn-g:hover{border-color:var(--signal)}
+.btn-d{background:transparent;color:var(--alert);border:1px solid rgba(229,84,75,.4)}
+.btn-s{padding:6px 11px;font-size:12px}
+.grid{display:grid;gap:12px}
+.g2{grid-template-columns:1fr 1fr} .g3{grid-template-columns:1fr 1fr 1fr} .g4{grid-template-columns:repeat(4,1fr)}
+@media(max-width:760px){.g2,.g3,.g4{grid-template-columns:1fr}}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--mute);
+  padding:8px 10px;border-bottom:1px solid var(--line);font-weight:500}
+td{padding:9px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+tr:last-child td{border-bottom:0}
+.pill{display:inline-block;font-size:11px;padding:3px 9px;border-radius:99px;border:1px solid var(--line);color:var(--mute)}
+.pill.run{color:var(--live);border-color:rgba(47,211,184,.5)}
+.pill.done{color:var(--dim)} .pill.plan{color:var(--signal);border-color:rgba(245,165,36,.5)}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:38px 20px;text-align:center;cursor:pointer;
+  transition:.15s;background:var(--panel)}
+.drop:hover,.drop.over{border-color:var(--signal);background:var(--panel2)}
+.drop .big{font-family:'Anuphan';font-size:17px;font-weight:700;margin-bottom:6px}
+.drop .sub{color:var(--mute);font-size:13px}
+.stoprow{border-left:3px solid var(--signal);padding:12px 14px;background:var(--panel2);
+  border-radius:0 10px 10px 0;margin-bottom:10px}
+.itemrow{display:grid;grid-template-columns:1fr 2fr 90px 90px 36px;gap:8px;margin-bottom:7px}
+@media(max-width:760px){.itemrow{grid-template-columns:1fr 1fr}}
+.x{background:transparent;border:1px solid var(--line);color:var(--mute);border-radius:8px;padding:0;height:36px}
+.x:hover{border-color:var(--alert);color:var(--alert)}
+.toast{position:fixed;right:22px;bottom:22px;background:var(--panel2);box-shadow:var(--shadow);border:1px solid var(--live);
+  border-radius:10px;padding:13px 17px;font-size:13px;display:none;z-index:80;max-width:340px}
+.toast.err{border-color:var(--alert)}
+.empty{color:var(--mute);text-align:center;padding:26px;font-size:13px}
+.note{font-size:12px;color:var(--mute);line-height:1.6}
+.hint{background:rgba(245,165,36,.08);border:1px solid rgba(245,165,36,.28);border-radius:9px;
+  padding:11px 13px;font-size:12px;color:var(--hint-t);margin-bottom:14px;line-height:1.7}
+code{font-family:'IBM Plex Mono',monospace;background:var(--panel2);padding:2px 6px;border-radius:5px;font-size:12px}
+
+/* ---------- Route optimization ---------- */
+.rtgrid{display:grid;grid-template-columns:1.15fr .85fr;gap:14px;margin-top:14px}
+@media(max-width:860px){.rtgrid{grid-template-columns:1fr}}
+#rtMap{height:380px;border-radius:11px;border:1px solid var(--line);background:var(--panel2)}
+/* โหมดมืด: กลับสีเฉพาะชั้นพื้นแผนที่ ไม่แตะหมุด/เส้นทาง และไม่ต้องใช้ tile server ที่ต้องมีคีย์ */
+:root[data-theme="dark"] .leaflet-tile-pane{
+  filter:invert(1) hue-rotate(180deg) brightness(.94) contrast(.9) saturate(.75);
+}
+.leaflet-container{font-family:'IBM Plex Sans Thai',sans-serif;background:var(--map-bg)}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel2);color:var(--paper);border-radius:10px}
+.leaflet-popup-content{margin:9px 11px;font-size:13px}
+.chk{display:flex;align-items:center;gap:7px;font-size:13px;color:var(--mute);cursor:pointer;white-space:nowrap}
+.chk input{width:auto}
+.src{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--dim);margin-left:auto}
+.cmp{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+@media(max-width:760px){.cmp{grid-template-columns:1fr}}
+.cmpbox{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:12px 14px}
+.cmpbox.win{border-color:rgba(47,211,184,.55)}
+.cmpbox .h{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin-bottom:7px}
+.cmpbox .v{font-family:'IBM Plex Mono',monospace;font-size:19px;font-weight:500}
+.cmpbox .s{font-size:12px;color:var(--mute);margin-top:3px}
+.good{color:var(--live)} .bad{color:var(--alert)} .warnbox{border-color:rgba(229,84,75,.45)}
+.seqlist{display:flex;flex-direction:column;gap:7px;max-height:380px;overflow:auto;padding-right:4px}
+.seqrow{display:grid;grid-template-columns:26px 1fr auto;gap:10px;align-items:center;
+  background:var(--panel2);border:1px solid var(--line);border-radius:9px;padding:9px 11px;cursor:grab}
+.seqrow:active{cursor:grabbing}
+.seqrow.drag{opacity:.35}
+.seqrow.over{border-color:var(--signal);box-shadow:0 -2px 0 var(--signal) inset}
+.seqrow.nogeo{border-style:dashed;border-color:rgba(229,84,75,.45)}
+.seqrow .n{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--signal);text-align:center}
+.seqrow .nm{font-size:13px;line-height:1.35}
+.seqrow .sub{font-size:11px;color:var(--mute);font-family:'IBM Plex Mono',monospace}
+.seqrow .rt{text-align:right;font-family:'IBM Plex Mono',monospace;font-size:12px;color:var(--mute);white-space:nowrap}
+.seqrow .rt b{color:var(--paper);font-weight:500}
+.mvbtn{background:transparent;border:1px solid var(--line);color:var(--mute);border-radius:6px;
+  padding:2px 7px;font-size:12px;line-height:1.4}
+.mvbtn:hover{border-color:var(--signal);color:var(--signal)}
+.numpin{background:var(--signal);color:var(--on-signal);font-family:'IBM Plex Mono',monospace;font-weight:600;
+  border-radius:50%;width:26px;height:26px;display:flex;align-items:center;justify-content:center;
+  font-size:12px;border:2px solid #12161C;box-shadow:0 1px 5px rgba(0,0,0,.5)}
+.numpin.dep{background:var(--live);border-radius:7px;width:44px;font-family:'IBM Plex Sans Thai',sans-serif;font-size:11px}
+</style>
+</head>
+<body>
+<div class="top">
+  <h1>วางแผนเที่ยววิ่ง</h1><span class="tag">TMS Planner</span>
+  <div class="tabs">
+    <div class="tab on" onclick="tab('pTrips',this)">เที่ยววิ่ง</div>
+    <div class="tab" onclick="tab('pUpload',this)">อัปโหลด Excel</div>
+    <div class="tab" onclick="tab('pCust',this)">ลูกค้า</div>
+    <div class="tab" onclick="tab('pDep',this)">จุดรับสินค้า</div>
+    <div class="tab" onclick="tab('pVeh',this)">รถ</div>
+  </div>
+  <button class="thm" id="themeBtn" onclick="toggleTheme()" style="margin-left:10px"></button>
+</div>
+
+<div class="wrap">
+
+<div class="pane on" id="pTrips">
+  <div class="card">
+    <div class="lbl">สร้างเที่ยวใหม่</div>
+    <div class="grid g4">
+      <div><label class="f">รถ</label><select id="nVeh"></select></div>
+      <div><label class="f">จุดรับสินค้า</label><select id="nDep"></select></div>
+      <div><label class="f">วันที่วิ่ง</label><input type="date" id="nDate"></div>
+      <div><label class="f">หมายเหตุ</label><input id="nNote" placeholder="รอบเช้า"></div>
+    </div>
+    <div style="margin-top:14px"><button class="btn" onclick="addTrip()">สร้างเที่ยว</button></div>
+  </div>
+
+  <div class="card">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px">
+      <div class="lbl" style="margin:0">เที่ยวทั้งหมด</div>
+      <input type="date" id="fDate" style="width:auto;margin-left:auto" onchange="loadTrips()">
+    </div>
+    <div id="tripTbl"></div>
+  </div>
+
+  <div class="card" id="editBox" style="display:none">
+    <div style="display:flex;align-items:center;margin-bottom:14px">
+      <div><div class="disp" style="font-size:18px" id="edTitle">—</div>
+      <div class="note" id="edSub"></div></div>
+      <button class="btn-g btn-s" style="margin-left:auto" onclick="closeEdit()">ปิด</button>
+    </div>
+
+    <div class="card" id="rtBox" style="margin-bottom:18px">
+      <div class="lbl">จัดเส้นทาง · Route Optimization</div>
+      <div class="grid g4">
+        <div><label class="f">จุดรับสินค้า (ต้นทาง)</label><select id="rtDepot" onchange="pickDepot(this.value)"></select></div>
+        <div><label class="f">พิกัดต้นทาง</label><input id="rtOrigin" class="mono" placeholder="14.0350, 100.6180" onchange="setOrigin(this.value)"></div>
+        <div><label class="f">เวลาออกรถ</label><input type="time" id="rtDepart" value="08:00" onchange="recalc()"></div>
+        <div><label class="f">เวลาลงของ/จุด (นาที)</label><input type="number" id="rtService" class="mono" value="10" min="0" onchange="recalc()"></div>
+      </div>
+      <div style="display:flex;gap:9px;align-items:center;margin-top:13px;flex-wrap:wrap">
+        <button class="btn" onclick="runAuto()" id="rtRun">คำนวณอัตโนมัติ</button>
+        <button class="btn-g" onclick="applyAuto()" id="rtApply" disabled>ใช้ลำดับ Auto</button>
+        <button class="btn-g" onclick="undoAuto()" id="rtUndo" disabled>ย้อนกลับลำดับเดิม</button>
+        <label class="chk" style="margin-left:6px">เกณฑ์
+          <select id="rtObj" style="width:auto;padding:6px 8px" onchange="recalc()">
+            <option value="time">เวลาสั้นสุด</option><option value="dist">ระยะทางสั้นสุด</option>
+          </select></label>
+        <label class="chk"><input type="checkbox" id="rtReturn" onchange="recalc()"> นับเที่ยวกลับคลัง</label>
+        <span class="src" id="rtSrc">ยังไม่ได้คำนวณ</span>
+      </div>
+      <div id="rtWarn"></div>
+      <div id="rtCmp" class="cmp"></div>
+      <div class="rtgrid">
+        <div id="rtMap"></div>
+        <div>
+          <div class="note" style="margin-bottom:8px">ลากสลับลำดับได้ · ตัวเลขขวามือ = ระยะจากจุดก่อนหน้า และเวลาถึงโดยประมาณ</div>
+          <div id="rtList" class="seqlist"></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="edStops"></div>
+    <button class="btn-g" onclick="addStop()">+ เพิ่มจุดส่ง</button>
+    <button class="btn" style="margin-left:8px" onclick="saveTrip()">บันทึกทั้งหมด</button>
+  </div>
+</div>
+
+<div class="pane" id="pUpload">
+  <div class="hint">1 แถว = สินค้า 1 รายการ · ระบบจัดกลุ่มเป็นเที่ยวและจุดส่งให้เอง จากคอลัมน์ <code>ทะเบียน</code> + <code>วันที่</code> + <code>ลำดับ</code><br>
+  จับคู่คอลัมน์ด้วยชื่อหัวตาราง ไม่สนลำดับคอลัมน์ ไม่สนคอลัมน์ส่วนเกิน — ไฟล์เดิมของบริษัทใช้ได้ถ้าหัวตารางตรง</div>
+  <div class="card">
+    <div class="lbl">ขั้นที่ 1 — เตรียมไฟล์</div>
+    <p class="note" style="margin:0 0 12px">ดาวน์โหลดฟอร์มมาตรฐานไปดูโครงสร้าง แล้วปรับหัวตารางไฟล์เดิมให้ตรงกัน</p>
+    <button class="btn-g" onclick="dlTemplate()">ดาวน์โหลดฟอร์ม Excel</button>
+  </div>
+  <div class="card">
+    <div class="lbl">ขั้นที่ 2 — อัปโหลด</div>
+    <div class="drop" id="drop" onclick="document.getElementById('file').click()">
+      <div class="big">ลากไฟล์ Excel มาวางที่นี่</div>
+      <div class="sub">หรือคลิกเพื่อเลือกไฟล์ · รองรับ .xlsx .xls .csv</div>
+    </div>
+    <input type="file" id="file" accept=".xlsx,.xls,.csv" style="display:none">
+  </div>
+  <div class="card" id="prevBox" style="display:none">
+    <div class="lbl">ขั้นที่ 3 — ตรวจก่อนบันทึก</div>
+    <div id="prevSum" class="note" style="margin-bottom:12px"></div>
+    <div id="prevTbl" style="max-height:340px;overflow:auto"></div>
+    <div style="margin-top:14px">
+      <button class="btn" onclick="commitImport()">บันทึกเข้าระบบ</button>
+      <button class="btn-g" style="margin-left:8px" onclick="cancelImport()">ยกเลิก</button>
+    </div>
+  </div>
+</div>
+
+<div class="pane" id="pCust">
+  <div class="hint">คีย์ครั้งเดียว ใช้ซ้ำตลอด · หาพิกัด: Google Maps → คลิกขวาที่จุด → คัดลอกตัวเลขคู่บนสุด มาวางในช่องพิกัดได้ทั้งก้อน</div>
+  <div class="card">
+    <div class="lbl">เพิ่มลูกค้า</div>
+    <div class="grid g4">
+      <div><label class="f">รหัส</label><input id="cCode" placeholder="C004"></div>
+      <div style="grid-column:span 2"><label class="f">ชื่อลูกค้า</label><input id="cName"></div>
+      <div><label class="f">ผู้ติดต่อ</label><input id="cContact"></div>
+    </div>
+    <div class="grid g3" style="margin-top:12px">
+      <div><label class="f">ที่อยู่</label><input id="cAddr"></div>
+      <div><label class="f">พิกัด</label><input id="cLatLng" class="mono" placeholder="14.0680, 100.6180"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn" onclick="addCust()">เพิ่มลูกค้า</button></div>
+    </div>
+  </div>
+  <div class="card"><div class="lbl">ทะเบียนลูกค้า</div><div id="custTbl"></div></div>
+</div>
+
+<div class="pane" id="pDep">
+  <div class="hint">จุดรับสินค้า = ต้นทางของเที่ยว · ระบบใช้จุดนี้เป็นหมุดเริ่มตอนคำนวณลำดับการส่ง<br>
+  ตั้ง <b>คลังหลัก</b> ได้ 1 แห่ง — เที่ยวที่สร้างใหม่จะเลือกคลังหลักให้อัตโนมัติ</div>
+  <div class="card">
+    <div class="lbl">เพิ่มจุดรับสินค้า</div>
+    <div class="grid g4">
+      <div><label class="f">รหัส</label><input id="dCode" placeholder="D02"></div>
+      <div style="grid-column:span 2"><label class="f">ชื่อคลัง / จุดรับ</label><input id="dName"></div>
+      <div><label class="f">ที่อยู่</label><input id="dAddr"></div>
+    </div>
+    <div class="grid g3" style="margin-top:12px">
+      <div><label class="f">พิกัด</label><input id="dLatLng" class="mono" placeholder="14.0350, 100.6180"></div>
+      <div style="display:flex;align-items:flex-end"><label class="chk"><input type="checkbox" id="dDef"> ตั้งเป็นคลังหลัก</label></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn" onclick="addDep()">เพิ่มจุดรับสินค้า</button></div>
+    </div>
+  </div>
+  <div class="card"><div class="lbl">จุดรับสินค้าทั้งหมด</div><div id="depTbl"></div></div>
+</div>
+
+<div class="pane" id="pVeh">
+  <div class="card">
+    <div class="lbl">เพิ่มรถ</div>
+    <div class="grid g4">
+      <div><label class="f">รหัสรถ</label><input id="vId" placeholder="V06"></div>
+      <div><label class="f">ทะเบียน</label><input id="vPlate" placeholder="70-1006 กทม"></div>
+      <div><label class="f">คนขับ</label><input id="vDrv"></div>
+      <div style="display:flex;align-items:flex-end"><button class="btn" onclick="addVeh()">เพิ่มรถ</button></div>
+    </div>
+  </div>
+  <div class="card"><div class="lbl">รถทั้งหมด</div><div id="vehTbl"></div></div>
+</div>
+
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   ตั้งค่า — ใส่ค่าเดียวกับ driver.html และ dashboard.html
+   ============================================================ */
+const SUPABASE_URL = 'https://shtidoddhnbmacbikczo.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_SSdmumG-xWgu0ZzuS8kY8A_NiPa_H-n';
+
+/* คีย์ OpenRouteService — ตัวเดียวกับ driver.html (ฟรี 2,000 ครั้ง/วัน)
+   ถ้าเว้นว่าง ระบบจะไปใช้ OSRM แล้วค่อยตกไปที่ระยะเส้นตรง × 1.3 */
+const ORS_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImFlMTdkODVlNDIxMjRkZmE4ZjE2MTgxOWNiNTQ2YmNiIiwiaCI6Im11cm11cjY0In0=';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+
+/* ---------- ธีมมืด/สว่าง ---------- */
+const ICON_SUN=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+ stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2
+ M22 12h-2.2M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/></svg>`;
+const ICON_MOON=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+ stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.4A8.6 8.6 0 1 1 9.6 4a6.9 6.9 0 0 0 10.4 10.4Z"/></svg>`;
+const theme = () => document.documentElement.dataset.theme || 'dark';
+function setTheme(t, save){
+  document.documentElement.dataset.theme = t;
+  if(save) try{ localStorage.setItem('tms_theme', t); }catch(e){}
+  const b = document.getElementById('themeBtn');
+  if(b){ b.innerHTML = t==='light' ? ICON_MOON : ICON_SUN;
+    b.title = t==='light' ? 'สลับเป็นโหมดมืด' : 'สลับเป็นโหมดสว่าง'; }
+  if(typeof onThemeChange === 'function') onThemeChange(t);
+}
+window.toggleTheme = () => setTheme(theme()==='light' ? 'dark' : 'light', true);
+/* แผนที่: โหมดสว่างใช้ CARTO Voyager (ถนนชัด) · โหมดมืดใช้ CARTO Dark */
+/* พื้นแผนที่ใช้ OpenStreetMap มาตรฐาน — ไม่ต้องใช้ API key ไม่ต้องสมัครอะไร
+   โหมดมืดไม่ได้เปลี่ยนเป็นเซิร์ฟเวอร์อื่น แต่ใส่ฟิลเตอร์กลับสีเฉพาะชั้นพื้นแผนที่
+   (หมุดกับเส้นทางอยู่คนละชั้น จึงไม่โดนกลับสีไปด้วย) */
+const TILE_URL  = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_ATTR = '© OpenStreetMap contributors';
+
+
+const today = () => new Date().toISOString().slice(0,10);
+let VEH=[], CUST=[], DEP=[], TRIPS=[], ED=null, IMP=null;
+
+function toast(m,err){const t=$('toast');t.textContent=m;t.className='toast'+(err?' err':'');
+  t.style.display='block';clearTimeout(t._t);t._t=setTimeout(()=>t.style.display='none',3600);}
+function tab(id,el){document.querySelectorAll('.pane').forEach(p=>p.classList.remove('on'));
+  document.querySelectorAll('.tab').forEach(t=>t.classList.remove('on'));
+  $(id).classList.add('on'); el.classList.add('on'); window.scrollTo(0,0);}
+const esc = s => String(s??'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+function parseLL(s){ const m=String(s||'').match(/(-?\d+\.?\d*)\s*,\s*(-?\d+\.?\d*)/);
+  return m ? {lat:parseFloat(m[1]), lng:parseFloat(m[2])} : {lat:null,lng:null}; }
+
+async function boot(){
+  if(!$('nDate').value){ $('nDate').value = today(); $('fDate').value = today(); }
+  const {data:v,error} = await sb.from('vehicles').select('*').order('id');
+  if(error) return toast('เชื่อมต่อฐานข้อมูลไม่ได้ ตรวจ URL และ key',true);
+  VEH = v||[];
+  const {data:c} = await sb.from('customers').select('*').order('code');
+  CUST = c||[];
+  const {data:d, error:de} = await sb.from('depots').select('*').order('code');
+  if(de) toast('ยังไม่มีตาราง depots — รัน 04_route_optimize.sql ก่อนใช้การจัดเส้นทาง',true);
+  DEP = d||[];
+  $('nVeh').innerHTML = VEH.map(x=>`<option value="${x.id}">${esc(x.plate)} · ${esc(x.driver_name||'')}</option>`).join('');
+  $('nDep').innerHTML = depOptions(DEP.find(x=>x.is_default)?.id);
+  renderVeh(); renderCust(); renderDep(); loadTrips();
+}
+const depOptions = sel => `<option value="">— ไม่ระบุ —</option>`+
+  DEP.map(d=>`<option value="${d.id}" ${sel==d.id?'selected':''}>${esc(d.name)}${d.is_default?' · คลังหลัก':''}</option>`).join('');
+
+/* ---------- จุดรับสินค้า ---------- */
+function renderDep(){
+  $('depTbl').innerHTML = DEP.length ? `<table><tr><th>รหัส</th><th>ชื่อ</th><th>ที่อยู่</th><th>พิกัด</th><th>คลังหลัก</th><th></th></tr>`+
+    DEP.map(d=>`<tr><td class="mono">${esc(d.code||'—')}</td><td>${esc(d.name)}</td>
+      <td class="note">${esc(d.address||'—')}</td>
+      <td class="mono" style="font-size:12px;color:${d.lat?'var(--live)':'var(--alert)'}">
+        ${d.lat!=null?d.lat.toFixed(4)+', '+d.lng.toFixed(4):'ยังไม่มีพิกัด'}</td>
+      <td>${d.is_default?'<span class="pill plan">คลังหลัก</span>':
+        `<button class="btn-g btn-s" onclick="setDefDep(${d.id})">ตั้งเป็นหลัก</button>`}</td>
+      <td style="text-align:right"><button class="btn-d btn-s" onclick="delDep(${d.id})">ลบ</button></td></tr>`).join('')+`</table>`
+    : '<div class="empty">ยังไม่มีจุดรับสินค้า — เพิ่มอย่างน้อย 1 แห่งก่อนใช้การจัดเส้นทาง</div>';
+}
+window.addDep = async () => {
+  const name=$('dName').value.trim(); if(!name) return toast('ใส่ชื่อจุดรับสินค้าก่อน',true);
+  const ll = parseLL($('dLatLng').value);
+  if(ll.lat==null) return toast('ต้องมีพิกัด ไม่งั้นคำนวณเส้นทางไม่ได้',true);
+  if($('dDef').checked) await sb.from('depots').update({is_default:false}).eq('is_default',true);
+  const {error} = await sb.from('depots').insert({code:$('dCode').value.trim()||null, name,
+    address:$('dAddr').value.trim()||null, is_default:$('dDef').checked, ...ll});
+  if(error) return toast('เพิ่มไม่สำเร็จ: '+error.message,true);
+  ['dCode','dName','dAddr','dLatLng'].forEach(i=>$(i).value=''); $('dDef').checked=false;
+  toast('เพิ่มจุดรับสินค้าแล้ว'); boot();
+};
+window.setDefDep = async id => { await sb.from('depots').update({is_default:false}).eq('is_default',true);
+  await sb.from('depots').update({is_default:true}).eq('id',id); boot(); };
+window.delDep = async id => { if(!confirm('ลบจุดรับสินค้านี้?')) return;
+  const {error}=await sb.from('depots').delete().eq('id',id);
+  if(error) return toast('ลบไม่ได้ — มีเที่ยววิ่งอ้างอิงอยู่',true); boot(); };
+
+/* ---------- รถ ---------- */
+function renderVeh(){
+  $('vehTbl').innerHTML = VEH.length ? `<table><tr><th>รหัส</th><th>ทะเบียน</th><th>คนขับ</th><th></th></tr>`+
+    VEH.map(v=>`<tr><td class="mono">${v.id}</td><td>${esc(v.plate)}</td><td>${esc(v.driver_name||'—')}</td>
+    <td style="text-align:right"><button class="btn-d btn-s" onclick="delVeh('${v.id}')">ลบ</button></td></tr>`).join('')+`</table>`
+    : '<div class="empty">ยังไม่มีรถในระบบ</div>';
+}
+window.addVeh = async () => {
+  const id=$('vId').value.trim(), plate=$('vPlate').value.trim();
+  if(!id||!plate) return toast('ใส่รหัสรถและทะเบียนก่อน',true);
+  const {error} = await sb.from('vehicles').insert({id,plate,driver_name:$('vDrv').value.trim()||null});
+  if(error) return toast('เพิ่มไม่สำเร็จ: '+error.message,true);
+  $('vId').value=$('vPlate').value=$('vDrv').value=''; toast('เพิ่มรถแล้ว'); boot();
+};
+window.delVeh = async id => { if(!confirm('ลบรถคันนี้?')) return;
+  const {error}=await sb.from('vehicles').delete().eq('id',id);
+  if(error) return toast('ลบไม่ได้ — รถคันนี้มีเที่ยววิ่งอยู่',true); boot(); };
+
+/* ---------- ลูกค้า ---------- */
+function renderCust(){
+  $('custTbl').innerHTML = CUST.length ? `<table><tr><th>รหัส</th><th>ชื่อ</th><th>ที่อยู่</th><th>พิกัด</th><th></th></tr>`+
+    CUST.map(c=>`<tr><td class="mono">${esc(c.code||'—')}</td><td>${esc(c.name)}</td>
+      <td class="note">${esc(c.address||'—')}</td>
+      <td class="mono" style="font-size:12px;color:${c.lat?'var(--live)':'var(--dim)'}">
+        ${c.lat?c.lat.toFixed(4)+', '+c.lng.toFixed(4):'ยังไม่มีพิกัด'}</td>
+      <td style="text-align:right"><button class="btn-d btn-s" onclick="delCust(${c.id})">ลบ</button></td></tr>`).join('')+`</table>`
+    : '<div class="empty">ยังไม่มีลูกค้าในทะเบียน</div>';
+}
+window.addCust = async () => {
+  const name=$('cName').value.trim(); if(!name) return toast('ใส่ชื่อลูกค้าก่อน',true);
+  const ll = parseLL($('cLatLng').value);
+  const {error} = await sb.from('customers').insert({code:$('cCode').value.trim()||null,name,
+    address:$('cAddr').value.trim()||null, contact:$('cContact').value.trim()||null, ...ll});
+  if(error) return toast('เพิ่มไม่สำเร็จ: '+error.message,true);
+  ['cCode','cName','cAddr','cContact','cLatLng'].forEach(i=>$(i).value=''); toast('เพิ่มลูกค้าแล้ว'); boot();
+};
+window.delCust = async id => { if(!confirm('ลบลูกค้ารายนี้?')) return;
+  await sb.from('customers').delete().eq('id',id); boot(); };
+
+/* ---------- เที่ยววิ่ง ---------- */
+async function loadTrips(){
+  const d = $('fDate').value || today();
+  const {data} = await sb.from('trips').select('*, stops(id, seq, customer, items(id))')
+    .eq('trip_date',d).order('id');
+  TRIPS = data||[];
+  const P = {planned:['ยังไม่เริ่ม','plan'],running:['กำลังวิ่ง','run'],done:['จบแล้ว','done'],cancelled:['ยกเลิก','done']};
+  $('tripTbl').innerHTML = TRIPS.length ? `<table>
+    <tr><th>เที่ยว</th><th>รถ</th><th>จุดส่ง</th><th>รายการ</th><th>เส้นทาง</th><th>สถานะ</th><th></th></tr>`+
+    TRIPS.map(t=>{
+      const items=(t.stops||[]).reduce((a,s)=>a+(s.items?.length||0),0);
+      const v=VEH.find(x=>x.id===t.vehicle_id);
+      return `<tr><td class="mono">#${t.id}</td><td>${esc(v?.plate||t.vehicle_id)}</td>
+      <td>${t.stops?.length||0} จุด</td><td>${items} รายการ</td>
+      <td class="mono" style="font-size:12px">${t.plan_distance_m
+        ? `${(t.plan_distance_m/1000).toFixed(1)} กม. · ${Math.round(t.plan_duration_s/60)} น.
+           <span class="pill ${t.route_mode==='auto'?'plan':''}" style="margin-left:4px">${t.route_mode==='auto'?'Auto':'Manual'}</span>`
+        : '<span style="color:var(--dim)">ยังไม่จัด</span>'}</td>
+      <td><span class="pill ${P[t.status]?.[1]||''}">${P[t.status]?.[0]||t.status}</span></td>
+      <td style="text-align:right">
+        <button class="btn-g btn-s" onclick="editTrip(${t.id})">แก้ไข</button>
+        <button class="btn-d btn-s" style="margin-left:6px" onclick="delTrip(${t.id})">ลบ</button></td></tr>`;
+    }).join('')+`</table>` : '<div class="empty">ยังไม่มีเที่ยววิ่งของวันที่เลือก</div>';
+}
+window.addTrip = async () => {
+  if(!VEH.length) return toast('เพิ่มรถเข้าระบบก่อน',true);
+  const d = DEP.find(x=>x.id==$('nDep').value);
+  const {data,error} = await sb.from('trips').insert({vehicle_id:$('nVeh').value,
+    trip_date:$('nDate').value, note:$('nNote').value.trim()||null,
+    depot_id:d?.id||null, origin_name:d?.name||null, origin_lat:d?.lat??null, origin_lng:d?.lng??null,
+    depart_at:'08:00', service_min:10}).select().single();
+  if(error) return toast('สร้างไม่สำเร็จ: '+error.message,true);
+  $('nNote').value=''; $('fDate').value=$('nDate').value; await loadTrips(); editTrip(data.id);
+};
+window.delTrip = async id => { if(!confirm('ลบเที่ยวนี้ พร้อมจุดส่งและรายการสินค้าทั้งหมด?')) return;
+  await sb.from('trips').delete().eq('id',id); closeEdit(); loadTrips(); toast('ลบเที่ยวแล้ว'); };
+
+window.editTrip = async id => {
+  const {data:t} = await sb.from('trips').select('*, stops(*, items(*))').eq('id',id).single();
+  t.stops.sort((a,b)=>a.seq-b.seq); t.stops.forEach(s=>{ s.items=(s.items||[]); uid(s); });
+  ED = t; const v=VEH.find(x=>x.id===t.vehicle_id);
+  $('edTitle').textContent = `เที่ยว #${t.id} · ${v?.plate||t.vehicle_id}`;
+  $('edSub').textContent = `${t.trip_date}${t.note?' · '+t.note:''}`;
+  $('editBox').style.display='block'; renderEd(); initRoute();
+  $('editBox').scrollIntoView({behavior:'smooth',block:'start'});
+};
+window.closeEdit = () => { ED=null; AUTO=null; SNAP=null; MTX=null; GAIN=null;
+  $('editBox').style.display='none'; };
+
+function renderEd(){
+  const opt = s => CUST.map(c=>`<option value="${c.id}" ${s==c.id?'selected':''}>${esc(c.name)}</option>`).join('');
+  $('edStops').innerHTML = ED.stops.map((s,si)=>`
+    <div class="stoprow">
+      <div class="grid g4" style="margin-bottom:10px">
+        <div><label class="f">ลำดับ</label>
+          <div class="mono" style="padding:9px 10px;background:var(--panel);border:1px solid var(--line);
+            border-radius:8px;color:var(--signal)">จุดที่ ${s.seq} <span style="color:var(--mute);font-size:11px">· สลับลำดับที่แผงจัดเส้นทาง</span></div></div>
+        <div style="grid-column:span 2"><label class="f">เลือกจากทะเบียนลูกค้า</label>
+          <select onchange="pickCust(${si},this.value)">
+            <option value="">— พิมพ์เอง —</option>${opt(s.customer_id)}</select></div>
+        <div style="display:flex;align-items:flex-end;justify-content:flex-end">
+          <button class="btn-d btn-s" onclick="delStop(${si})">ลบจุดส่ง</button></div>
+      </div>
+      <div class="grid g3" style="margin-bottom:12px">
+        <div><label class="f">ชื่อที่แสดงให้คนขับ</label><input value="${esc(s.customer)}" onchange="setStop(${si},'customer',this.value)"></div>
+        <div><label class="f">ที่อยู่</label><input value="${esc(s.address||'')}" onchange="setStop(${si},'address',this.value)"></div>
+        <div><label class="f">พิกัดปลายทาง</label><input class="mono" placeholder="14.0680, 100.6180"
+          value="${s.dest_lat!=null?s.dest_lat+', '+s.dest_lng:''}" onchange="setLL(${si},this.value)"></div>
+      </div>
+      <div class="lbl" style="margin-bottom:7px">รายการสินค้า</div>
+      ${s.items.map((it,ii)=>`<div class="itemrow">
+        <input placeholder="รหัส" value="${esc(it.item_code||'')}" onchange="setItem(${si},${ii},'item_code',this.value)">
+        <input placeholder="ชื่อสินค้า" value="${esc(it.item_name||'')}" onchange="setItem(${si},${ii},'item_name',this.value)">
+        <input class="mono" type="number" placeholder="จำนวน" value="${it.qty_plan??''}" onchange="setItem(${si},${ii},'qty_plan',this.value)">
+        <input placeholder="หน่วย" value="${esc(it.unit||'')}" onchange="setItem(${si},${ii},'unit',this.value)">
+        <button class="x" onclick="delItem(${si},${ii})">×</button></div>`).join('')}
+      <button class="btn-g btn-s" onclick="addItem(${si})">+ เพิ่มสินค้า</button>
+    </div>`).join('') || '<div class="empty">ยังไม่มีจุดส่ง กดปุ่มด้านล่างเพื่อเพิ่ม</div>';
+}
+window.setStop=(i,k,v)=>{ ED.stops[i][k]=v; if(k==='customer') renderList(); };
+window.setLL=(i,v)=>{ const ll=parseLL(v); ED.stops[i].dest_lat=ll.lat; ED.stops[i].dest_lng=ll.lng;
+  AUTO=null; $('rtApply').disabled=true; recalc(); };
+window.setItem=(si,ii,k,v)=>{ ED.stops[si].items[ii][k] = k==='qty_plan'?(parseFloat(v)||0):v; };
+window.addStop=()=>{ ED.stops.push({seq:ED.stops.length+1,customer:'',address:'',dest_lat:null,dest_lng:null,
+  customer_id:null,status:'pending',items:[{item_code:'',item_name:'',qty_plan:1,unit:'ชิ้น'}]});
+  AUTO=null; $('rtApply').disabled=true; renderEd(); recalc(); };
+window.delStop=i=>{ ED.stops.splice(i,1); ED.stops.forEach((s,n)=>s.seq=n+1);
+  AUTO=null; $('rtApply').disabled=true; renderEd(); recalc(); };
+window.addItem=si=>{ ED.stops[si].items.push({item_code:'',item_name:'',qty_plan:1,unit:'ชิ้น'}); renderEd(); };
+window.delItem=(si,ii)=>{ ED.stops[si].items.splice(ii,1); renderEd(); };
+window.pickCust=(si,cid)=>{ const s=ED.stops[si];
+  if(!cid){ s.customer_id=null; return renderEd(); }
+  const c=CUST.find(x=>x.id==cid);
+  s.customer_id=c.id; s.customer=c.name; s.address=c.address||''; s.dest_lat=c.lat; s.dest_lng=c.lng;
+  AUTO=null; $('rtApply').disabled=true; renderEd(); recalc(); };
+
+window.saveTrip = async () => {
+  for(const s of ED.stops){
+    if(!s.customer?.trim()) return toast('มีจุดส่งที่ยังไม่ได้ใส่ชื่อลูกค้า',true);
+    if(!s.items.length || s.items.some(i=>!i.item_name?.trim()))
+      return toast(`จุดส่ง "${s.customer}" มีสินค้าที่ยังไม่ใส่ชื่อ`,true);
+  }
+  const plan = PLAN;                                   // ผลคำนวณล่าสุดของลำดับที่เห็นอยู่
+  await sb.from('stops').delete().eq('trip_id',ED.id);
+  for(const s of ED.stops){
+    const leg = plan?.byUid?.[uid(s)] || {};
+    const {data:ns,error} = await sb.from('stops').insert({trip_id:ED.id, seq:s.seq, customer:s.customer,
+      address:s.address||null, customer_id:s.customer_id||null,
+      dest_lat:s.dest_lat, dest_lng:s.dest_lng, status:'pending',
+      leg_distance_m:leg.d??null, leg_duration_s:leg.t??null, eta:leg.eta??null}).select().single();
+    if(error) return toast('บันทึกไม่สำเร็จ: '+error.message,true);
+    if(s.items.length) await sb.from('items').insert(s.items.map(i=>({stop_id:ns.id,
+      item_code:i.item_code||null, item_name:i.item_name, qty_plan:i.qty_plan||1, unit:i.unit||'ชิ้น'})));
+  }
+  await sb.from('trips').update({
+    depot_id:ED.depot_id||null, origin_name:ED.origin_name||null,
+    origin_lat:ED.origin_lat??null, origin_lng:ED.origin_lng??null,
+    route_mode:ED.route_mode||'manual', route_src:MTX?.src||null,
+    route_objective:$('rtObj').value==='dist'?'distance':'time',
+    plan_return:$('rtReturn').checked,
+    plan_distance_m:plan?.d??null, plan_duration_s:plan?.t??null,
+    depart_at:$('rtDepart').value||null, service_min:parseInt($('rtService').value)||0,
+    optimized_at: plan ? new Date().toISOString() : null
+  }).eq('id',ED.id);
+  toast('บันทึกเรียบร้อย คนขับเห็นงานแล้ว'); loadTrips();
+};
+
+/* ============================================================
+   ROUTE OPTIMIZATION
+   โจทย์: ออกจากจุดรับสินค้า 1 จุด → ส่งหลายจุด → จบที่จุดสุดท้าย
+          (open-route TSP; ติ๊ก "นับเที่ยวกลับคลัง" ถ้าต้องวิ่งกลับ)
+   วิธี:  1) ขอ matrix ระยะทาง/เวลาถนนจริง  ORS → OSRM → เส้นตรง×1.3
+          2) Nearest Neighbour หาลำดับตั้งต้น
+          3) 2-opt + Or-opt ขัดจนไม่ดีขึ้น  (n ไม่เกิน ~40 เร็วพอในเบราว์เซอร์)
+   ============================================================ */
+let MAP=null, LAYER=null, MTX=null, AUTO=null, SNAP=null, PLAN=null, GAIN=null, orsDown=0;
+
+const R2 = x => Math.round(x*10)/10;
+const km = m => (m/1000).toFixed(1)+' กม.';
+const hm = s => { const t=Math.round(s/60); return t>=60 ? `${Math.floor(t/60)} ชม. ${t%60} น.` : `${t} น.`; };
+function haversine(a,b){
+  const rad=Math.PI/180, dLat=(b.lat-a.lat)*rad, dLng=(b.lng-a.lng)*rad;
+  const x=Math.sin(dLat/2)**2 + Math.cos(a.lat*rad)*Math.cos(b.lat*rad)*Math.sin(dLng/2)**2;
+  return 6371000*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+let UIDN=0;
+const uid = s => (s._uid || (s._uid = 'u'+(++UIDN)));     // ตัวระบุจุดส่งที่ไม่เปลี่ยนตามการสลับลำดับ
+const ck  = s => uid(s)+'@'+s.dest_lat.toFixed(5)+','+s.dest_lng.toFixed(5);
+const mtxKey = g => `${ED.origin_lat},${ED.origin_lng}|`+g.map(ck).slice().sort().join('|');
+const geoStops = () => ED.stops.filter(s=>s.dest_lat!=null && s.dest_lng!=null);
+const noGeo    = () => ED.stops.filter(s=>s.dest_lat==null || s.dest_lng==null);
+const hasOrigin= () => ED && ED.origin_lat!=null && ED.origin_lng!=null;
+
+/* ---------- matrix: ORS → OSRM → ประมาณจากเส้นตรง ---------- */
+async function matrixORS(pts){
+  if(!ORS_KEY || Date.now()-orsDown < 600000) return null;
+  try{
+    const r = await fetch('https://api.openrouteservice.org/v2/matrix/driving-car',{
+      method:'POST', headers:{'Authorization':ORS_KEY,'Content-Type':'application/json'},
+      body: JSON.stringify({locations:pts.map(p=>[p.lng,p.lat]), metrics:['distance','duration'], units:'m'})});
+    if(!r.ok){ if(r.status===403||r.status===429) orsDown=Date.now(); return null; }
+    const j = await r.json();
+    if(!j.distances || !j.durations) return null;
+    return {dist:j.distances, dur:j.durations, src:'ORS'};
+  }catch(e){ return null; }
+}
+async function matrixOSRM(pts){
+  try{
+    const c = pts.map(p=>p.lng+','+p.lat).join(';');
+    const r = await fetch(`https://router.project-osrm.org/table/v1/driving/${c}?annotations=distance,duration`);
+    const j = await r.json();
+    if(j.code!=='Ok' || !j.distances) return null;
+    return {dist:j.distances, dur:j.durations, src:'OSRM'};
+  }catch(e){ return null; }
+}
+function matrixEst(pts){                       // เส้นตรง × 1.3 ที่ 35 กม./ชม. — ใช้ตอนออฟไลน์
+  const F=1.3, V=35/3.6;
+  const d = pts.map(a=>pts.map(b=>haversine(a,b)*F));
+  return {dist:d, dur:d.map(row=>row.map(x=>x/V)), src:'EST'};
+}
+async function buildMatrix(pts){
+  return (await matrixORS(pts)) || (await matrixOSRM(pts)) || matrixEst(pts);
+}
+
+/* ---------- ต้นทุนของลำดับหนึ่ง ๆ (node 0 = จุดรับสินค้า) ---------- */
+function cost(order, M, back, obj){
+  const A = obj==='dist' ? M.dist : M.dur;
+  let v=0, d=0, t=0, p=0;
+  for(const i of order){ v+=A[p][i]; d+=M.dist[p][i]; t+=M.dur[p][i]; p=i; }
+  if(back){ v+=A[p][0]; d+=M.dist[p][0]; t+=M.dur[p][0]; }
+  return {v,d,t};
+}
+function nearestNeighbour(M, n, obj){
+  const A = obj==='dist' ? M.dist : M.dur;
+  const left = new Set(); for(let i=1;i<=n;i++) left.add(i);
+  const o=[]; let p=0;
+  while(left.size){
+    let best=null, bv=Infinity;
+    for(const i of left){ if(A[p][i]<bv){ bv=A[p][i]; best=i; } }
+    o.push(best); left.delete(best); p=best;
+  }
+  return o;
+}
+function twoOpt(o, M, back, obj){
+  let best = cost(o,M,back,obj).v, guard=0;
+  for(let improved=true; improved && guard++<80; ){
+    improved=false;
+    for(let i=0;i<o.length-1 && !improved;i++)
+      for(let k=i+1;k<o.length;k++){
+        const c = o.slice(0,i).concat(o.slice(i,k+1).reverse(), o.slice(k+1));
+        const v = cost(c,M,back,obj).v;
+        if(v < best-1e-6){ o=c; best=v; improved=true; break; }
+      }
+  }
+  return o;
+}
+function orOpt(o, M, back, obj){                 // ย้ายก้อน 1-3 จุดไปแทรกที่อื่น
+  let best = cost(o,M,back,obj).v, guard=0;
+  for(let improved=true; improved && guard++<80; ){
+    improved=false;
+    outer:
+    for(let L=1;L<=3;L++)
+      for(let i=0;i+L<=o.length;i++){
+        const seg=o.slice(i,i+L), rest=o.slice(0,i).concat(o.slice(i+L));
+        for(let j=0;j<=rest.length;j++){
+          if(j===i) continue;
+          const c = rest.slice(0,j).concat(seg, rest.slice(j));
+          const v = cost(c,M,back,obj).v;
+          if(v < best-1e-6){ o=c; best=v; improved=true; break outer; }
+        }
+      }
+  }
+  return o;
+}
+function insertion(M, n, back, obj){        // cheapest-insertion เริ่มจากจุดไกลคลังที่สุด
+  const A = obj==='dist' ? M.dist : M.dur;
+  const left = new Set(); for(let i=1;i<=n;i++) left.add(i);
+  let f=null, fv=-1; for(const i of left){ if(A[0][i]>fv){ fv=A[0][i]; f=i; } }
+  const o=[f]; left.delete(f);
+  while(left.size){
+    let bi=null, bp=0, bv=Infinity;
+    for(const i of left) for(let p=0;p<=o.length;p++){
+      const v = cost(o.slice(0,p).concat([i], o.slice(p)), M, back, obj).v;
+      if(v<bv){ bv=v; bi=i; bp=p; }
+    }
+    o.splice(bp,0,bi); left.delete(bi);
+  }
+  return o;
+}
+function doubleBridge(o){                   // เขย่าลำดับให้หลุดจากหลุมพราง local optimum
+  const n=o.length, a=o.slice();
+  if(n<8){ const i=Math.floor(Math.random()*n), j=Math.floor(Math.random()*n);
+    [a[i],a[j]]=[a[j],a[i]]; return a; }
+  const cuts=[1+Math.floor(Math.random()*(n-3)), 1+Math.floor(Math.random()*(n-3)), 1+Math.floor(Math.random()*(n-3))]
+    .sort((x,y)=>x-y);
+  const [p1,p2,p3]=cuts;
+  return a.slice(0,p1).concat(a.slice(p2,p3), a.slice(p1,p2), a.slice(p3));
+}
+function solve(M, n, back, obj){
+  if(n<=1) return n===1?[1]:[];
+  const ls = o => { for(let i=0;i<3;i++){ o=twoOpt(o,M,back,obj); o=orOpt(o,M,back,obj); } return o; };
+  let best = ls(nearestNeighbour(M,n,obj)), bv = cost(best,M,back,obj).v;
+  const alt = ls(insertion(M,n,back,obj)), av = cost(alt,M,back,obj).v;
+  if(av < bv){ best=alt; bv=av; }
+  let cur = best.slice(), stall = 0;
+  const kicks = n<=4 ? 0 : (n<=20 ? 120 : 40);
+  for(let k=0;k<kicks;k++){
+    const o = ls(doubleBridge(cur)), v = cost(o,M,back,obj).v;
+    if(v < bv-1e-9){ best=o; bv=v; cur=o; stall=0; }
+    else if(++stall >= 15){                 // ติดหลุม — สุ่มลำดับใหม่แล้วขัดอีกรอบ
+      const r = best.slice();
+      for(let i=r.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [r[i],r[j]]=[r[j],r[i]]; }
+      cur = ls(r); stall = 0;
+      const rv = cost(cur,M,back,obj).v; if(rv < bv-1e-9){ best=cur.slice(); bv=rv; }
+    }
+  }
+  return best;
+}
+
+/* ---------- แผงจัดเส้นทาง ---------- */
+function initRoute(){
+  AUTO=null; SNAP=null; MTX=null; PLAN=null; GAIN=null;
+  $('rtDepot').innerHTML = depOptions(ED.depot_id);
+  $('rtOrigin').value = hasOrigin() ? ED.origin_lat+', '+ED.origin_lng : '';
+  $('rtDepart').value = (ED.depart_at||'08:00').slice(0,5);
+  $('rtService').value = ED.service_min ?? 10;
+  $('rtReturn').checked = !!ED.plan_return;
+  $('rtObj').value = ED.route_objective==='distance' ? 'dist' : 'time';
+  $('rtApply').disabled = true; $('rtUndo').disabled = true;
+  $('rtSrc').textContent = 'ยังไม่ได้คำนวณ';
+  $('rtCmp').innerHTML = '';
+  drawMap(); recalc();
+}
+window.pickDepot = id => {
+  const d = DEP.find(x=>x.id==id);
+  ED.depot_id = d?.id||null; ED.origin_name = d?.name||null;
+  ED.origin_lat = d?.lat??null; ED.origin_lng = d?.lng??null;
+  $('rtOrigin').value = hasOrigin() ? ED.origin_lat+', '+ED.origin_lng : '';
+  AUTO=null; MTX=null; $('rtApply').disabled=true; recalc();
+};
+window.setOrigin = v => {
+  const ll = parseLL(v); ED.origin_lat=ll.lat; ED.origin_lng=ll.lng;
+  if(ll.lat!=null && !ED.origin_name) ED.origin_name='จุดรับสินค้า';
+  AUTO=null; MTX=null; $('rtApply').disabled=true; recalc();
+};
+
+/* คำนวณตัวเลขของ "ลำดับที่เห็นอยู่ตอนนี้" แล้ววาดใหม่ */
+async function recalc(){
+  if(!ED) return;
+  const g = geoStops();
+  let warn = [];
+  if(!hasOrigin()) warn.push('ยังไม่ได้ระบุจุดรับสินค้า — เลือกคลังหรือวางพิกัดต้นทางก่อน');
+  if(noGeo().length) warn.push(`${noGeo().length} จุดยังไม่มีพิกัด — ไม่ถูกนำมาคำนวณ และจะถูกต่อท้ายลำดับ`);
+  $('rtWarn').innerHTML = warn.length
+    ? `<div class="hint" style="margin:12px 0 0;border-color:rgba(229,84,75,.35);background:rgba(229,84,75,.07);color:#F0B7B2">${warn.join('<br>')}</div>` : '';
+
+  if(hasOrigin() && g.length){
+    const k = mtxKey(g);
+    if(!MTX || MTX.key!==k){                     // ขอ matrix ใหม่เฉพาะตอนจุด/พิกัดเปลี่ยน ไม่ใช่ตอนสลับลำดับ
+      $('rtSrc').textContent='กำลังขอระยะทางถนนจริง…';
+      const pts = [{lat:ED.origin_lat,lng:ED.origin_lng}, ...g.map(s=>({lat:s.dest_lat,lng:s.dest_lng}))];
+      MTX = await buildMatrix(pts);
+      MTX.idx={}; MTX.stopOf={};
+      g.forEach((s,i)=>{ MTX.idx[uid(s)]=i+1; MTX.stopOf[i+1]=s; });
+      MTX.key = k;
+      $('rtSrc').textContent = 'ระยะจาก: '+({ORS:'OpenRouteService',OSRM:'OSRM',EST:'ประมาณจากเส้นตรง ×1.3'}[MTX.src]);
+    }
+    PLAN = measure(g.map(s=>MTX.idx[uid(s)]));   // ลำดับที่เห็นอยู่ตอนนี้
+  } else { PLAN=null; MTX=null; }
+  renderCmp(); renderList(); drawMap();
+}
+
+/* วัดผลของลำดับหนึ่ง ๆ + แตกเป็นราย leg พร้อม ETA */
+function measure(order){
+  const back = $('rtReturn').checked, obj = $('rtObj').value;
+  const c = cost(order, MTX, back, obj);
+  const svc = (parseInt($('rtService').value)||0)*60;
+  const [hh,mm] = ($('rtDepart').value||'08:00').split(':').map(Number);
+  let clock = (hh*3600+mm*60), p=0;
+  const legs = order.map(i=>{
+    const d=MTX.dist[p][i], t=MTX.dur[p][i]; p=i; clock += t;
+    const eta = fmtClock(clock); clock += svc;
+    return {d,t,eta};
+  });
+  const byUid={}; order.forEach((i,k)=>{ byUid[uid(MTX.stopOf[i])] = legs[k]; });
+  return {order, d:c.d, t:c.t, legs, byUid, back};
+}
+const fmtClock = s => { const x=Math.round(s/60)%1440;
+  return String(Math.floor(x/60)).padStart(2,'0')+':'+String(x%60).padStart(2,'0'); };
+
+window.runAuto = async () => {
+  if(!hasOrigin()) return toast('เลือกจุดรับสินค้าก่อน',true);
+  const g = geoStops();
+  if(g.length<2) return toast('ต้องมีจุดส่งที่มีพิกัดอย่างน้อย 2 จุด',true);
+  $('rtRun').disabled=true; $('rtRun').textContent='กำลังคำนวณ…';
+  await recalc();
+  const order = solve(MTX, g.length, $('rtReturn').checked, $('rtObj').value);
+  AUTO = measure(order);
+  $('rtRun').disabled=false; $('rtRun').textContent='คำนวณอัตโนมัติ';
+  $('rtApply').disabled = false;
+  renderCmp(); drawMap();
+  const save = PLAN.t - AUTO.t;
+  toast(save>30 ? `Auto เร็วกว่าลำดับปัจจุบัน ${hm(save)}` : 'ลำดับปัจจุบันดีอยู่แล้ว Auto ไม่ได้ดีขึ้นชัดเจน');
+};
+
+window.applyAuto = () => {
+  if(!AUTO) return;
+  SNAP = ED.stops.slice();                       // เก็บลำดับเดิมไว้ย้อนกลับ
+  GAIN = {d: PLAN.d-AUTO.d, t: PLAN.t-AUTO.t, from: PLAN.d};
+  const reordered = AUTO.order.map(i=>MTX.stopOf[i]);
+  ED.stops = reordered.concat(noGeo());
+  ED.stops.forEach((s,i)=>s.seq=i+1);
+  ED.route_mode='auto';
+  $('rtUndo').disabled=false; $('rtApply').disabled=true; AUTO=null;
+  renderEd(); recalc(); toast('ใช้ลำดับ Auto แล้ว — กด "บันทึกทั้งหมด" เพื่อส่งให้คนขับ');
+};
+window.undoAuto = () => {
+  if(!SNAP) return;
+  ED.stops = SNAP; SNAP=null; GAIN=null; ED.route_mode='manual';
+  ED.stops.forEach((s,i)=>s.seq=i+1);
+  $('rtUndo').disabled=true; renderEd(); recalc(); toast('ย้อนกลับลำดับเดิมแล้ว');
+};
+
+function renderCmp(){
+  if(!PLAN){ $('rtCmp').innerHTML=''; return; }
+  const box = (h,v,s,cls='') => `<div class="cmpbox ${cls}"><div class="h">${h}</div><div class="v">${v}</div><div class="s">${s}</div></div>`;
+  let html = box(ED.route_mode==='auto'?'ลำดับปัจจุบัน (Auto)':'ลำดับปัจจุบัน (Manual)',
+    km(PLAN.d), hm(PLAN.t)+' · '+PLAN.order.length+' จุด'+($('rtReturn').checked?' · รวมเที่ยวกลับ':''));
+  if(AUTO){
+    const dd = PLAN.d-AUTO.d, dt = PLAN.t-AUTO.t;
+    const pct = PLAN.d>0 ? (dd/PLAN.d*100) : 0;
+    html += box('Auto optimize', km(AUTO.d), hm(AUTO.t), dt>0?'win':'');
+    html += box('ส่วนต่าง',
+      `<span class="${dd>0?'good':'bad'}">${dd>0?'−':'+'}${km(Math.abs(dd))}</span>`,
+      `${dd>0?'ประหยัด':'แย่ลง'} ${hm(Math.abs(dt))} · ${Math.abs(pct).toFixed(0)}%`, dd>0?'win':'warnbox');
+  } else if(GAIN && ED.route_mode==='auto'){
+    html += box('ก่อนจัด (Manual)', km(GAIN.from), 'ลำดับที่คีย์เข้ามาตอนแรก');
+    html += box('ผลที่ได้',
+      `<span class="${GAIN.d>0?'good':'bad'}">${GAIN.d>0?'−':'+'}${km(Math.abs(GAIN.d))}</span>`,
+      `${GAIN.d>0?'ประหยัด':'แย่ลง'} ${hm(Math.abs(GAIN.t))} · ${(Math.abs(GAIN.d/GAIN.from*100)).toFixed(0)}%`,
+      GAIN.d>0?'win':'warnbox');
+  } else {
+    html += box('Auto optimize','—','กด "คำนวณอัตโนมัติ" เพื่อเทียบ');
+    html += box('ส่วนต่าง','—','ยังไม่มีผลเทียบ');
+  }
+  $('rtCmp').innerHTML = html;
+}
+
+function renderList(){
+  const g = geoStops(), ng = noGeo();
+  const rows = ED.stops.map((s,i)=>{
+    const gi = g.indexOf(s);
+    const leg = (gi>=0 && PLAN) ? PLAN.legs[gi] : null;
+    return `<div class="seqrow ${gi<0?'nogeo':''}" draggable="true" data-i="${i}">
+      <div class="n">${i+1}</div>
+      <div><div class="nm">${esc(s.customer||'(ยังไม่ใส่ชื่อ)')}</div>
+        <div class="sub">${gi<0 ? 'ไม่มีพิกัด' : s.dest_lat.toFixed(4)+', '+s.dest_lng.toFixed(4)}</div></div>
+      <div class="rt">${leg ? `<b>${km(leg.d)}</b><br>ถึง ${leg.eta} น.` :
+        `<button class="mvbtn" onclick="mv(${i},-1)">↑</button>
+         <button class="mvbtn" onclick="mv(${i},1)">↓</button>`}</div>
+    </div>`;
+  }).join('');
+  $('rtList').innerHTML = rows || '<div class="empty">ยังไม่มีจุดส่ง</div>';
+  bindDrag();
+}
+window.mv = (i,d) => { const j=i+d; if(j<0||j>=ED.stops.length) return;
+  const a=ED.stops; [a[i],a[j]]=[a[j],a[i]]; a.forEach((s,n)=>s.seq=n+1);
+  ED.route_mode='manual'; GAIN=null; renderEd(); recalc(); };
+
+let dragI=null;
+function bindDrag(){
+  $('rtList').querySelectorAll('.seqrow').forEach(el=>{
+    el.addEventListener('dragstart',e=>{ dragI=+el.dataset.i; el.classList.add('drag');
+      e.dataTransfer.effectAllowed='move'; });
+    el.addEventListener('dragend',()=>{ el.classList.remove('drag');
+      $('rtList').querySelectorAll('.seqrow').forEach(x=>x.classList.remove('over')); });
+    el.addEventListener('dragover',e=>{ e.preventDefault(); el.classList.add('over'); });
+    el.addEventListener('dragleave',()=>el.classList.remove('over'));
+    el.addEventListener('drop',e=>{ e.preventDefault();
+      const to=+el.dataset.i; if(dragI==null||dragI===to) return;
+      const a=ED.stops, [m]=a.splice(dragI,1); a.splice(to,0,m);
+      a.forEach((s,n)=>s.seq=n+1); dragI=null;
+      ED.route_mode='manual'; GAIN=null; renderEd(); recalc(); });
+  });
+}
+
+function drawMap(){
+  if(!MAP){
+    MAP = L.map('rtMap',{zoomControl:true, attributionControl:false}).setView([14.03,100.62],11);
+    L.tileLayer(TILE_URL,{maxZoom:19}).addTo(MAP);
+  }
+  if(LAYER) MAP.removeLayer(LAYER);
+  LAYER = L.layerGroup().addTo(MAP);
+  const pts=[];
+  if(hasOrigin()){
+    const o=[ED.origin_lat,ED.origin_lng]; pts.push(o);
+    L.marker(o,{icon:L.divIcon({className:'',html:'<div class="numpin dep">คลัง</div>',
+      iconSize:[44,26],iconAnchor:[22,13]})}).addTo(LAYER)
+      .bindPopup('จุดรับสินค้า: '+esc(ED.origin_name||'—'));
+  }
+  const g = geoStops();
+  g.forEach((s,i)=>{
+    const p=[s.dest_lat,s.dest_lng]; pts.push(p);
+    L.marker(p,{icon:L.divIcon({className:'',html:`<div class="numpin">${ED.stops.indexOf(s)+1}</div>`,
+      iconSize:[26,26],iconAnchor:[13,13]})}).addTo(LAYER).bindPopup(esc(s.customer||'—'));
+  });
+  if(hasOrigin() && g.length){
+    const line = [[ED.origin_lat,ED.origin_lng], ...g.map(s=>[s.dest_lat,s.dest_lng])];
+    if($('rtReturn').checked) line.push([ED.origin_lat,ED.origin_lng]);
+    L.polyline(line,{color:'#F5A524',weight:3,opacity:.85}).addTo(LAYER);
+    if(AUTO && MTX){
+      const al = [[ED.origin_lat,ED.origin_lng],
+        ...AUTO.order.map(i=>[MTX.stopOf[i].dest_lat, MTX.stopOf[i].dest_lng])];
+      if($('rtReturn').checked) al.push([ED.origin_lat,ED.origin_lng]);
+      L.polyline(al,{color:'#2FD3B8',weight:3,opacity:.9,dashArray:'7 6'}).addTo(LAYER);
+    }
+  }
+  if(pts.length){ MAP.fitBounds(L.latLngBounds(pts).pad(.25)); }
+  setTimeout(()=>MAP.invalidateSize(),120);
+}
+
+/* ---------- อัปโหลด Excel ---------- */
+const COLS = {
+  vehicle:['ทะเบียน','รหัสรถ','vehicle','plate','รถ'],
+  date:['วันที่','date','trip_date','วันที่วิ่ง'],
+  seq:['ลำดับ','seq','ลำดับส่ง','order'],
+  cust_code:['รหัสลูกค้า','customer_code','code'],
+  customer:['ชื่อลูกค้า','ลูกค้า','customer','name'],
+  address:['ที่อยู่','address','สถานที่'],
+  lat:['lat','latitude','ละติจูด'], lng:['lng','lon','longitude','ลองจิจูด'],
+  item_code:['รหัสสินค้า','item_code','sku'],
+  item_name:['ชื่อสินค้า','สินค้า','item','item_name','รายการ'],
+  qty:['จำนวน','qty','qty_plan','จำนวนส่ง'],
+  unit:['หน่วย','unit','uom']
+};
+function mapRow(r){
+  const keys = Object.keys(r); const out = {};
+  for(const [f,aliases] of Object.entries(COLS)){
+    const k = keys.find(k=>{ const t=String(k).trim(); return aliases.includes(t)||aliases.includes(t.toLowerCase()); });
+    out[f] = k!=null ? r[k] : null;
+  }
+  return out;
+}
+function xlDate(v){
+  if(v==null||v==='') return today();
+  if(v instanceof Date) return new Date(v.getTime()-v.getTimezoneOffset()*60000).toISOString().slice(0,10);
+  if(typeof v==='number') return new Date(Date.UTC(1899,11,30+v)).toISOString().slice(0,10);
+  const s=String(v).trim();
+  if(/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0,10);
+  const m=s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})$/);
+  if(m){ let y=+m[3]; if(y>2400) y-=543; return `${y}-${String(m[2]).padStart(2,'0')}-${String(m[1]).padStart(2,'0')}`; }
+  return today();
+}
+const drop=$('drop');
+['dragover','dragleave','drop'].forEach(e=>drop.addEventListener(e,ev=>{ev.preventDefault();
+  drop.classList.toggle('over', e==='dragover');}));
+drop.addEventListener('drop', ev=>{ if(ev.dataTransfer.files[0]) readFile(ev.dataTransfer.files[0]); });
+$('file').addEventListener('change', e=>{ if(e.target.files[0]) readFile(e.target.files[0]); });
+
+function readFile(f){
+  const rd = new FileReader();
+  rd.onload = e => {
+    let rows;
+    try{
+      const wb = XLSX.read(e.target.result,{type:'array',cellDates:true});
+      rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:null});
+    }catch(err){ return toast('อ่านไฟล์ไม่ได้ ตรวจว่าเป็น Excel หรือ CSV',true); }
+    if(!rows.length) return toast('ไฟล์ไม่มีข้อมูล',true);
+    buildImport(rows.map(mapRow), f.name);
+  };
+  rd.readAsArrayBuffer(f);
+}
+
+function buildImport(rows, fname){
+  const bad = [], trips = new Map();
+  rows.forEach((r,i)=>{
+    const plate = String(r.vehicle||'').trim();
+    const veh = VEH.find(v=>v.plate===plate || v.id===plate);
+    if(!veh){ bad.push(`แถว ${i+2}: ไม่พบรถ "${plate||'(ว่าง)'}" ในระบบ`); return; }
+    if(!r.item_name){ bad.push(`แถว ${i+2}: ไม่มีชื่อสินค้า`); return; }
+    const date = xlDate(r.date), tk = veh.id+'|'+date;
+    if(!trips.has(tk)) trips.set(tk,{vehicle_id:veh.id, plate:veh.plate, trip_date:date, stops:new Map()});
+    const T = trips.get(tk);
+    const seq = parseInt(r.seq)||T.stops.size+1;
+    if(!T.stops.has(seq)){
+      const c = r.cust_code ? CUST.find(x=>x.code===String(r.cust_code).trim()) : null;
+      T.stops.set(seq,{seq, customer_id:c?.id||null,
+        customer: String(r.customer||c?.name||'').trim() || 'ไม่ระบุลูกค้า',
+        address: r.address || c?.address || null,
+        dest_lat: (r.lat!=null&&r.lat!=='') ? parseFloat(r.lat) : (c?.lat ?? null),
+        dest_lng: (r.lng!=null&&r.lng!=='') ? parseFloat(r.lng) : (c?.lng ?? null),
+        items:[]});
+    }
+    T.stops.get(seq).items.push({item_code:r.item_code?String(r.item_code):null,
+      item_name:String(r.item_name).trim(), qty_plan:parseFloat(r.qty)||1, unit:r.unit?String(r.unit):'ชิ้น'});
+  });
+  IMP = [...trips.values()].map(t=>({...t, stops:[...t.stops.values()].sort((a,b)=>a.seq-b.seq)}));
+  const nStops = IMP.reduce((a,t)=>a+t.stops.length,0);
+  const nItems = IMP.reduce((a,t)=>a+t.stops.reduce((b,s)=>b+s.items.length,0),0);
+  $('prevSum').innerHTML = `<b style="color:var(--paper)">${esc(fname)}</b> → ${IMP.length} เที่ยว · ${nStops} จุดส่ง · ${nItems} รายการ`
+    + (bad.length?`<div style="color:var(--alert);margin-top:8px">ข้าม ${bad.length} แถว:<br>${bad.slice(0,8).map(esc).join('<br>')}${bad.length>8?'<br>…':''}</div>`:'');
+  $('prevTbl').innerHTML = `<table><tr><th>รถ</th><th>วันที่</th><th>ลำดับ</th><th>ลูกค้า</th><th>พิกัด</th><th>สินค้า</th></tr>`+
+    IMP.flatMap(t=>t.stops.map(s=>`<tr><td>${esc(t.plate)}</td><td class="mono">${t.trip_date}</td>
+      <td class="mono">${s.seq}</td><td>${esc(s.customer)}</td>
+      <td class="mono" style="font-size:11px;color:${s.dest_lat?'var(--live)':'var(--dim)'}">${s.dest_lat?'มี':'ไม่มี'}</td>
+      <td class="note">${s.items.map(i=>esc(i.item_name)+' ×'+i.qty_plan).join(', ')}</td></tr>`)).join('')+`</table>`;
+  $('prevBox').style.display='block';
+  $('prevBox').scrollIntoView({behavior:'smooth',block:'start'});
+  if(!IMP.length) toast('ไม่มีแถวที่ใช้ได้เลย ตรวจชื่อคอลัมน์และทะเบียนรถ',true);
+}
+window.cancelImport = () => { IMP=null; $('prevBox').style.display='none'; $('file').value=''; };
+window.commitImport = async () => {
+  if(!IMP?.length) return;
+  const firstDate = IMP[0].trip_date; let n=0;
+  for(const t of IMP){
+    const dd = DEP.find(x=>x.is_default);
+    const {data:tr,error} = await sb.from('trips').insert({vehicle_id:t.vehicle_id,
+      trip_date:t.trip_date, note:'นำเข้าจาก Excel',
+      depot_id:dd?.id||null, origin_name:dd?.name||null, origin_lat:dd?.lat??null, origin_lng:dd?.lng??null,
+      depart_at:'08:00', service_min:10}).select().single();
+    if(error){ return toast('บันทึกไม่สำเร็จ: '+error.message,true); }
+    for(const s of t.stops){
+      const {data:ns} = await sb.from('stops').insert({trip_id:tr.id, seq:s.seq, customer:s.customer,
+        address:s.address, customer_id:s.customer_id, dest_lat:s.dest_lat, dest_lng:s.dest_lng}).select().single();
+      await sb.from('items').insert(s.items.map(i=>({stop_id:ns.id, ...i})));
+    }
+    n++;
+  }
+  toast(`นำเข้า ${n} เที่ยวเรียบร้อย`); cancelImport(); $('fDate').value=firstDate; loadTrips();
+};
+
+window.dlTemplate = () => {
+  const ex = VEH[0]?.plate || '70-1001 กทม';
+  const base = {'ทะเบียน':ex,'วันที่':today()};
+  const rows = [
+    {...base,'ลำดับ':1,'รหัสลูกค้า':'C001','ชื่อลูกค้า':'ร้านค้า A','ที่อยู่':'คลองหลวง ปทุมธานี','lat':14.0680,'lng':100.6180,'รหัสสินค้า':'A-001','ชื่อสินค้า':'ลังน้ำดื่ม','จำนวน':20,'หน่วย':'ลัง'},
+    {...base,'ลำดับ':1,'รหัสลูกค้า':'C001','ชื่อลูกค้า':'ร้านค้า A','ที่อยู่':'คลองหลวง ปทุมธานี','lat':14.0680,'lng':100.6180,'รหัสสินค้า':'A-002','ชื่อสินค้า':'กล่องสินค้า B','จำนวน':5,'หน่วย':'กล่อง'},
+    {...base,'ลำดับ':2,'รหัสลูกค้า':'C002','ชื่อลูกค้า':'ร้านค้า B','ที่อยู่':'รังสิต ปทุมธานี','lat':13.9800,'lng':100.6170,'รหัสสินค้า':'A-003','ชื่อสินค้า':'พาเลทสินค้า C','จำนวน':2,'หน่วย':'พาเลท'}
+  ];
+  const ws = XLSX.utils.json_to_sheet(rows);
+  ws['!cols'] = [{wch:14},{wch:12},{wch:7},{wch:11},{wch:20},{wch:26},{wch:10},{wch:10},{wch:11},{wch:20},{wch:8},{wch:8}];
+  const wb = XLSX.utils.book_new(); XLSX.utils.book_append_sheet(wb, ws, 'แผนจัดรถ');
+  XLSX.writeFile(wb, 'TMS_ฟอร์มแผนจัดรถ.xlsx');
+};
+
+setTheme(theme(), false);
+boot();
+</script>
+</body>
+</html>

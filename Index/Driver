@@ -1,0 +1,984 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0E1520">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<title>TMS · หน้าจอคนขับ</title>
+<script>/* ตั้งธีมก่อนวาดหน้า กันจอกระพริบตอนโหลด */
+try{var _t=localStorage.getItem('tms_theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');
+document.documentElement.dataset.theme=_t;}catch(e){document.documentElement.dataset.theme='dark';}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<style>
+/* ============================================================
+   ธีม — มืด (ค่าเริ่มต้นตามเครื่อง) / สว่าง · สลับที่ปุ่มมุมขวาบน จำค่าไว้ในเครื่อง
+   โหมดมืด = ใช้ในห้องคุมกลางคืน · โหมดสว่าง = ใช้ในออฟฟิศ/กลางแดด
+   ============================================================ */
+:root{
+  --ink:#0E1520; --panel:#141D2A; --panel2:#1B2636; --line:#26344A;
+  --paper:#E6EDF5; --mute:#8A9CB4;
+  --signal:#F5A524; --live:#2FD3B8; --alert:#E5544B; --dim:#4A5F7D;
+  --on-signal:#12161C; --on-live:#0B1F1B; --on-alert:#FFFFFF;
+  --hint-t:#F2D9A8; --map-bg:var(--map-bg);
+  --shadow:0 6px 22px rgba(0,0,0,.42);
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --ink:#E9EEF5; --panel:#FFFFFF; --panel2:#F2F6FB; --line:#D2DCEA;
+  --paper:#132030; --mute:#566780;
+  --signal:#BE7009; --live:#0B8C79; --alert:#BC3A30; --dim:#8DA0B7;
+  --on-signal:#FFFFFF; --on-live:#FFFFFF; --on-alert:#FFFFFF;
+  --hint-t:#7A4A05; --map-bg:#E4EAF1;
+  --shadow:0 6px 20px rgba(23,42,71,.14);
+  color-scheme:light;
+}
+.thm{background:transparent;border:1px solid var(--line);color:var(--mute);border-radius:9px;
+  padding:7px 9px;cursor:pointer;display:grid;place-items:center;line-height:0;width:auto;flex:none}
+.thm:hover{color:var(--signal);border-color:var(--signal)}
+.thm svg{width:16px;height:16px;display:block}
+
+:root{--r:14px}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:var(--ink);color:var(--paper);
+  font-family:'IBM Plex Sans Thai',system-ui,sans-serif;font-size:16px;line-height:1.5}
+body{padding:env(safe-area-inset-top) 0 env(safe-area-inset-bottom)}
+h1,h2,h3,.disp{font-family:'Anuphan',sans-serif;font-weight:700;letter-spacing:.01em;margin:0}
+.mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+.wrap{max-width:560px;margin:0 auto;padding:16px 16px 96px}
+.screen{display:none} .screen.on{display:block}
+
+/* header */
+.hdr{display:flex;align-items:center;gap:10px;padding:14px 16px;border-bottom:1px solid var(--line);
+  position:sticky;top:0;background:color-mix(in srgb, var(--panel) 94%, transparent);backdrop-filter:blur(8px);z-index:20}
+.hdr .plate{font-family:'IBM Plex Mono',monospace;font-size:15px;color:var(--signal)}
+.hdr .who{font-size:13px;color:var(--mute)}
+.pulse{width:9px;height:9px;border-radius:50%;background:var(--dim);flex:none}
+.pulse.on{background:var(--live);box-shadow:0 0 0 0 rgba(47,211,184,.6);animation:p 1.8s infinite}
+@keyframes p{70%{box-shadow:0 0 0 10px rgba(47,211,184,0)}100%{box-shadow:0 0 0 0 rgba(47,211,184,0)}}
+@media (prefers-reduced-motion:reduce){.pulse.on{animation:none}}
+
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:16px;margin-bottom:12px}
+.lbl{font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+select,input,textarea{width:100%;background:var(--panel2);color:var(--paper);border:1px solid var(--line);
+  border-radius:10px;padding:13px 12px;font-family:inherit;font-size:16px}
+button{font-family:inherit;font-size:16px;font-weight:600;border:0;border-radius:12px;padding:15px 18px;
+  cursor:pointer;width:100%}
+.btn{background:var(--signal);color:var(--on-signal)}
+.btn-ghost{background:transparent;color:var(--paper);border:1px solid var(--line)}
+.btn-live{background:var(--live);color:var(--on-live)}
+.btn-stop{background:var(--alert);color:#fff}
+.btn-sm{padding:11px 14px;font-size:14px}
+.row{display:flex;gap:8px}
+
+/* big status bar */
+.status{border-radius:var(--r);padding:18px 16px;margin-bottom:14px;border:1px solid var(--line);background:var(--panel)}
+.status.live{background:linear-gradient(180deg,rgba(47,211,184,.14),rgba(47,211,184,.03));border-color:rgba(47,211,184,.45)}
+.status .big{font-family:'Anuphan';font-size:22px;font-weight:700}
+.status .sub{font-size:13px;color:var(--mute);margin-top:2px}
+.gps{display:flex;gap:16px;margin-top:12px;font-size:12px;color:var(--mute)}
+.gps b{display:block;color:var(--paper);font-family:'IBM Plex Mono',monospace;font-size:14px;font-weight:500}
+
+/* stop rail — signature element */
+.rail{display:flex;align-items:center;gap:0;margin:6px 0 18px}
+.bead{flex:none;width:26px;height:26px;border-radius:50%;border:2px solid var(--dim);
+  display:grid;place-items:center;font-size:12px;font-weight:600;color:var(--mute);background:var(--ink)}
+.bead.done{background:var(--live);border-color:var(--live);color:var(--on-live)}
+.bead.partial{background:var(--signal);border-color:var(--signal);color:var(--on-signal)}
+.bead.ret{background:var(--alert);border-color:var(--alert);color:#fff}
+.bead.now{border-color:var(--signal);color:var(--signal);box-shadow:0 0 0 4px rgba(245,165,36,.15)}
+.seg{flex:1;height:2px;background:var(--dim)} .seg.done{background:var(--live)}
+
+/* stop card */
+.stop{border-left:3px solid var(--dim);padding-left:12px;margin-bottom:12px}
+.stop.now{border-left-color:var(--signal)}
+.stop.done{border-left-color:var(--live);opacity:.62}
+.stop .cust{font-family:'Anuphan';font-weight:700;font-size:17px}
+.stop .addr{font-size:13px;color:var(--mute)}
+.tag{display:inline-block;font-size:11px;letter-spacing:.08em;text-transform:uppercase;
+  padding:3px 8px;border-radius:99px;border:1px solid var(--line);color:var(--mute)}
+.tag.done{color:var(--live);border-color:rgba(47,211,184,.5)}
+.tag.partial{color:var(--signal);border-color:rgba(245,165,36,.5)}
+.tag.ret{color:var(--alert);border-color:rgba(229,84,75,.5)}
+
+/* item checklist */
+.item{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.item:last-child{border-bottom:0}
+.tick{width:30px;height:30px;border-radius:9px;border:2px solid var(--line);flex:none;
+  display:grid;place-items:center;background:var(--panel2);font-size:16px;color:transparent}
+.item.ok .tick{background:var(--live);border-color:var(--live);color:var(--on-live)}
+.item.part .tick{background:var(--signal);border-color:var(--signal);color:var(--on-signal)}
+.item.ret .tick{background:var(--alert);border-color:var(--alert);color:#fff}
+.item .nm{flex:1;min-width:0}
+.item .nm b{display:block;font-weight:600;font-size:15px}
+.item .nm span{font-size:12px;color:var(--mute);font-family:'IBM Plex Mono',monospace}
+.qty{width:64px;text-align:center;padding:9px 4px;font-size:15px}
+
+.bar{position:fixed;left:0;right:0;bottom:0;padding:12px 16px calc(12px + env(safe-area-inset-bottom));
+  background:color-mix(in srgb, var(--panel) 94%, transparent);backdrop-filter:blur(10px);border-top:1px solid var(--line);z-index:30}
+.bar .wrap2{max-width:560px;margin:0 auto}
+.toast{position:fixed;left:16px;right:16px;bottom:96px;background:var(--panel2);border:1px solid var(--line);
+  border-radius:12px;padding:13px 15px;font-size:14px;z-index:60;display:none}
+.toast.err{border-color:var(--alert);color:var(--alert)}
+.empty{color:var(--mute);font-size:14px;padding:20px 0;text-align:center}
+.q{font-size:13px;color:var(--mute);margin:14px 0 6px}
+
+/* geofence banner */
+.geo{border-radius:var(--r);border:1px solid var(--line);background:var(--panel);
+  padding:15px 16px;margin-bottom:12px}
+.geo.ok{background:linear-gradient(180deg,rgba(47,211,184,.13),rgba(47,211,184,.02));border-color:rgba(47,211,184,.45)}
+.geo.warn{background:linear-gradient(180deg,rgba(245,165,36,.13),rgba(245,165,36,.02));border-color:rgba(245,165,36,.5)}
+.geo.bad{background:linear-gradient(180deg,rgba(229,84,75,.13),rgba(229,84,75,.02));border-color:rgba(229,84,75,.5)}
+.geo-hd{display:flex;align-items:center;gap:10px}
+.geo-ic{font-size:19px;line-height:1}
+.geo.ok .geo-ic{color:var(--live)} .geo.warn .geo-ic{color:var(--signal)} .geo.bad .geo-ic{color:var(--alert)}
+.geo-t{font-family:'Anuphan';font-weight:700;font-size:16px}
+.geo-s{font-size:13px;color:var(--mute);margin-top:5px;line-height:1.55}
+.geo-s b{color:var(--paper);font-family:'IBM Plex Mono',monospace;font-weight:500}
+.btn-warn{background:var(--signal);color:var(--on-signal)}
+
+/* แผนที่นำทาง */
+.mapwrap{position:relative;border-radius:var(--r);overflow:hidden;border:1px solid var(--line);
+  margin-bottom:14px;background:var(--map-bg)}
+#dmap{height:42vh;min-height:260px;background:var(--map-bg)}
+.mapwrap.mini #dmap{height:150px;min-height:150px}
+.navcard{position:absolute;left:10px;right:10px;bottom:10px;z-index:500;
+  background:color-mix(in srgb, var(--panel) 94%, transparent);backdrop-filter:blur(8px);border:1px solid var(--line);box-shadow:var(--shadow);
+  border-radius:12px;padding:11px 13px;display:flex;align-items:center;gap:12px}
+.navcard .to{flex:1;min-width:0}
+.navcard .to b{display:block;font-family:'Anuphan';font-size:15px;font-weight:700;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.navcard .to span{font-size:12px;color:var(--mute)}
+.navcard .dist{text-align:right;flex:none}
+.navcard .dist b{display:block;font-family:'IBM Plex Mono',monospace;font-size:17px;color:var(--live);font-weight:500}
+.navcard .dist span{font-size:11px;color:var(--mute)}
+.gm{flex:none;background:var(--live);color:var(--on-live);border-radius:10px;padding:10px 13px;
+  font-weight:700;font-size:13px;border:0;width:auto}
+.mapbtn{position:absolute;top:10px;right:10px;z-index:500;width:auto;
+  background:color-mix(in srgb, var(--panel) 94%, transparent);border:1px solid var(--line);color:var(--paper);box-shadow:var(--shadow);
+  border-radius:9px;padding:7px 12px;font-size:12px}
+/* โหมดมืด: กลับสีเฉพาะชั้นพื้นแผนที่ ไม่แตะหมุด/เส้นทาง และไม่ต้องใช้ tile server ที่ต้องมีคีย์ */
+:root[data-theme="dark"] .leaflet-tile-pane{
+  filter:invert(1) hue-rotate(180deg) brightness(.94) contrast(.9) saturate(.75);
+}
+.leaflet-container{font-family:'IBM Plex Sans Thai',sans-serif}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel2);color:var(--paper);border-radius:10px}
+.leaflet-popup-content{margin:9px 11px;font-size:13px}
+.dmk{display:grid;place-items:center;border-radius:50%;font-family:'IBM Plex Mono',monospace;
+  font-size:11px;font-weight:600;border:2px solid #0E1520}
+.leaflet-overlay-pane path.flow{stroke-dasharray:14 11;animation:flow 1.1s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-25}}
+@media (prefers-reduced-motion:reduce){.leaflet-overlay-pane path.flow{animation:none}}
+.wait{display:flex;align-items:center;gap:9px;font-size:13px;color:var(--signal);margin-top:10px}
+.spin{width:13px;height:13px;border:2px solid rgba(245,165,36,.3);border-top-color:var(--signal);
+  border-radius:50%;animation:sp .9s linear infinite;flex:none}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+</style>
+</head>
+<body>
+
+<div class="hdr">
+  <div class="pulse" id="pulse"></div>
+  <div style="flex:1">
+    <div class="plate" id="hPlate">— ยังไม่เลือกรถ —</div>
+    <div class="who" id="hWho">TMS · หน้าจอคนขับ</div>
+  </div>
+  <div class="mono" id="hClock" style="font-size:13px;color:var(--mute)"></div>
+  <button class="thm" id="themeBtn" onclick="toggleTheme()"></button>
+</div>
+
+<!-- ========== 1. เลือกรถ ========== -->
+<div class="screen on" id="scLogin"><div class="wrap">
+  <h1 style="font-size:26px;margin:18px 0 6px">เริ่มงานวันนี้</h1>
+  <p style="color:var(--mute);margin:0 0 22px;font-size:14px">เลือกรถที่ขับ แล้วเปิดการส่งตำแหน่ง ระบบจะติดตามเฉพาะตอนที่กด “เริ่มวิ่ง” เท่านั้น</p>
+  <div class="card">
+    <div class="lbl">รถ / ทะเบียน</div>
+    <select id="selVeh"><option value="">กำลังโหลด…</option></select>
+    <div style="height:12px"></div>
+    <button class="btn" id="btnLogin">เข้าใช้งาน</button>
+  </div>
+</div></div>
+
+<!-- ========== 2. เที่ยววันนี้ ========== -->
+<div class="screen" id="scTrips"><div class="wrap">
+  <h2 style="font-size:20px;margin:18px 0 12px">เที่ยววิ่งวันนี้</h2>
+  <div id="tripList"></div>
+  <button class="btn-ghost" onclick="go('scLogin')" style="margin-top:8px">เปลี่ยนรถ</button>
+</div></div>
+
+<!-- ========== 3. หน้าวิ่งงาน ========== -->
+<div class="screen" id="scRun"><div class="wrap">
+  <div class="status" id="statusBox">
+    <div class="big" id="stTitle">ยังไม่ส่งตำแหน่ง</div>
+    <div class="sub" id="stSub">กดปุ่มด้านล่างเพื่อเริ่มวิ่ง</div>
+    <div class="gps">
+      <div>ความเร็ว<b id="gSpeed">—</b></div>
+      <div>ความแม่นยำ<b id="gAcc">—</b></div>
+      <div>ส่งล่าสุด<b id="gLast">—</b></div>
+      <div>คิวรอส่ง<b id="gQueue">0</b></div>
+    </div>
+  </div>
+
+  <div class="mapwrap" id="mapwrap">
+    <div id="dmap"></div>
+    <button class="mapbtn" onclick="toggleMap()" id="mapToggle">ย่อแผนที่</button>
+    <div class="navcard" id="navcard" style="display:none">
+      <div class="to"><b id="navTo">—</b><span id="navSeq"></span></div>
+      <div class="dist"><b id="navDist">—</b><span id="navEta">—</span></div>
+      <button class="gm" onclick="openGmaps()">นำทาง</button>
+    </div>
+  </div>
+
+  <div class="lbl">ความคืบหน้า</div>
+  <div class="rail" id="rail"></div>
+
+  <div id="stopList"></div>
+</div></div>
+
+<!-- ========== 4. ยืนยันการส่ง ========== -->
+<div class="screen" id="scPod"><div class="wrap">
+  <button class="btn-ghost btn-sm" onclick="go('scRun')" style="width:auto;padding:8px 14px;margin:14px 0">← กลับ</button>
+  <h2 style="font-size:21px" id="podCust">—</h2>
+  <div style="color:var(--mute);font-size:13px;margin-bottom:14px" id="podAddr"></div>
+
+  <div class="geo" id="geoBox">
+    <div class="geo-hd"><span class="geo-ic" id="geoIc">◎</span>
+      <span class="geo-t" id="geoT">กำลังตรวจตำแหน่ง…</span></div>
+    <div class="geo-s" id="geoS"></div>
+    <div id="geoAsk" style="display:none;margin-top:12px">
+      <textarea id="podReason" rows="2" placeholder="เหตุผลที่ส่งนอกพื้นที่ เช่น ลูกค้านัดรับหน้าปากซอย"></textarea>
+      <div style="height:9px"></div>
+      <button class="btn-warn" onclick="askApproval()">ขออนุมัติจากศูนย์</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="lbl">สินค้าที่ต้องส่ง — แตะเพื่อสลับสถานะ</div>
+    <div id="itemList"></div>
+    <div class="q">แตะ 1 ครั้ง = ส่งครบ · 2 ครั้ง = ส่งบางส่วน (กรอกจำนวน) · 3 ครั้ง = ตีกลับ</div>
+  </div>
+
+  <div class="card">
+    <div class="lbl">ผู้รับสินค้า</div>
+    <input id="podRecv" placeholder="ชื่อผู้รับ">
+    <div style="height:10px"></div>
+    <textarea id="podNote" rows="2" placeholder="หมายเหตุ (ถ้ามี)"></textarea>
+  </div>
+</div></div>
+
+<div class="bar" id="bar"><div class="wrap2" id="barInner"></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* ============================================================
+   ตั้งค่า — ใส่ค่าจาก Supabase → Project Settings → API
+   ============================================================ */
+const SUPABASE_URL = 'https://shtidoddhnbmacbikczo.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_SSdmumG-xWgu0ZzuS8kY8A_NiPa_H-n';
+const PING_SEC = 15;   // ส่งพิกัดทุกกี่วินาที
+
+/* OpenRouteService — เส้นทางถนนคุณภาพดีกว่า ฟรี 2,000 เส้นทาง/วัน
+   สมัครที่ openrouteservice.org → Dashboard → Request a token (Standard)
+   ปล่อยว่างไว้ได้ ระบบจะใช้ OSRM สาธารณะแทน */
+const ORS_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImFlMTdkODVlNDIxMjRkZmE4ZjE2MTgxOWNiNTQ2YmNiIiwiaCI6Im11cm11cjY0In0=';
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+
+/* ---------- ธีมมืด/สว่าง ---------- */
+const ICON_SUN=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+ stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2
+ M22 12h-2.2M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/></svg>`;
+const ICON_MOON=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+ stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.4A8.6 8.6 0 1 1 9.6 4a6.9 6.9 0 0 0 10.4 10.4Z"/></svg>`;
+const theme = () => document.documentElement.dataset.theme || 'dark';
+function setTheme(t, save){
+  document.documentElement.dataset.theme = t;
+  if(save) try{ localStorage.setItem('tms_theme', t); }catch(e){}
+  const b = document.getElementById('themeBtn');
+  if(b){ b.innerHTML = t==='light' ? ICON_MOON : ICON_SUN;
+    b.title = t==='light' ? 'สลับเป็นโหมดมืด' : 'สลับเป็นโหมดสว่าง'; }
+  if(typeof onThemeChange === 'function') onThemeChange(t);
+}
+window.toggleTheme = () => setTheme(theme()==='light' ? 'dark' : 'light', true);
+/* แผนที่: โหมดสว่างใช้ CARTO Voyager (ถนนชัด) · โหมดมืดใช้ CARTO Dark */
+/* พื้นแผนที่ใช้ OpenStreetMap มาตรฐาน — ไม่ต้องใช้ API key ไม่ต้องสมัครอะไร
+   โหมดมืดไม่ได้เปลี่ยนเป็นเซิร์ฟเวอร์อื่น แต่ใส่ฟิลเตอร์กลับสีเฉพาะชั้นพื้นแผนที่
+   (หมุดกับเส้นทางอยู่คนละชั้น จึงไม่โดนกลับสีไปด้วย) */
+const TILE_URL  = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_ATTR = '© OpenStreetMap contributors';
+
+const S = { veh:null, trip:null, stops:[], items:{}, stop:null, tracking:false,
+            watchId:null, lastPos:null, lastSent:0, wake:null };
+const ST = { pending:['รอส่ง',''], arrived:['ถึงแล้ว',''], delivered:['ส่งครบ','done'],
+             partial:['ส่งบางส่วน','partial'], returned:['ตีกลับ','ret'] };
+
+/* ============================================================
+   ทนต่อการสลับแอป (คนขับกดไป Google Maps / LINE แล้วกลับมา)
+   - จำสถานะงานไว้ใน localStorage → เปิดกลับมาเข้าหน้าเดิม ไม่ต้องเลือกรถใหม่
+   - พิกัดที่ยิงไม่สำเร็จ/ตอนอยู่เบื้องหลัง เก็บเข้าคิวไว้ แล้วส่งตามทีหลัง ไม่หาย
+   - กลับมาหน้าจอ = ขอ wake lock ใหม่ + เริ่ม watchPosition ใหม่ + ดึงงานล่าสุด
+   ============================================================ */
+const LS = {
+  get(k,d){ try{ const v=localStorage.getItem(k); return v==null?d:JSON.parse(v); }catch(e){ return d; } },
+  set(k,v){ try{ localStorage.setItem(k, JSON.stringify(v)); }catch(e){} },
+  del(k){ try{ localStorage.removeItem(k); }catch(e){} }
+};
+const saveSession = () => LS.set('tms_session',
+  {veh:S.veh?.id||null, trip:S.trip?.id||null, tracking:S.tracking, at:Date.now()});
+
+let Q = LS.get('tms_queue', []), flushing = false;
+function qBadge(){ const el=$('gQueue'); if(!el) return;
+  el.textContent = Q.length ? String(Q.length) : '0';
+  el.style.color = Q.length ? 'var(--signal)' : 'var(--paper)'; }
+function queuePing(row){
+  Q.push(row); if(Q.length>3000) Q = Q.slice(-3000);
+  LS.set('tms_queue', Q); qBadge(); flushQ();
+}
+async function flushQ(){
+  if(flushing || !Q.length || navigator.onLine===false) return;
+  flushing = true;
+  const batch = Q.slice(0,60);
+  const {error} = await sb.from('gps_logs').insert(batch);
+  flushing = false;
+  if(error){ setTimeout(flushQ, 8000); return; }          // เน็ตหลุด — เก็บไว้ก่อน เดี๋ยวลองใหม่
+  Q = Q.slice(batch.length); LS.set('tms_queue', Q); qBadge();
+  $('gLast').textContent = hhmm(Date.now());
+  if(Q.length) flushQ();
+}
+window.addEventListener('online', flushQ);
+
+function go(id){ document.querySelectorAll('.screen').forEach(s=>s.classList.remove('on'));
+  $(id).classList.add('on'); window.scrollTo(0,0); drawBar(id); }
+function toast(msg, err){ const t=$('toast'); t.textContent=msg; t.className='toast'+(err?' err':'');
+  t.style.display='block'; clearTimeout(t._t); t._t=setTimeout(()=>t.style.display='none',3200); }
+function hhmm(d){ return new Date(d).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'}); }
+setInterval(()=>$('hClock').textContent=hhmm(Date.now()),1000);
+
+/* ---------- โหลดรถ ---------- */
+(async function init(){
+  const {data,error} = await sb.from('vehicles').select('*').eq('active',true).order('id');
+  if(error){ toast('เชื่อมต่อฐานข้อมูลไม่ได้ ตรวจ URL และ key',true); return; }
+  $('selVeh').innerHTML = '<option value="">— เลือกรถ —</option>' +
+    data.map(v=>`<option value="${v.id}">${v.plate} · ${v.driver_name||''}</option>`).join('');
+  const saved = localStorage.getItem('tms_veh');
+  if(saved){ $('selVeh').value = saved; }
+  qBadge(); flushQ();
+  if(await restoreSession()) return;          // กลับมาจากการสลับแอป/ปิดแอป → เข้าหน้าเดิมเลย
+  drawBar('scLogin');
+})();
+
+/* กู้สถานะงานที่ค้างอยู่ — ใช้ตอนเปิดแอปใหม่หลังสลับแอปหรือเบราว์เซอร์ปิดหน้าทิ้ง */
+async function restoreSession(){
+  const ss = LS.get('tms_session', null);
+  if(!ss?.veh || !ss?.trip) return false;
+  try{
+    const {data:v} = await sb.from('vehicles').select('*').eq('id',ss.veh).single();
+    if(!v) return false;
+    const {data:t} = await sb.from('trips').select('*').eq('id',ss.trip).single();
+    if(!t || t.status==='done'){ LS.del('tms_session'); return false; }
+    S.veh = v; S.trip = t;
+    $('hPlate').textContent = v.plate;
+    $('hWho').textContent = 'คนขับ: ' + (v.driver_name||'—');
+    await loadStops(); go('scRun');
+    if(ss.tracking){ toast('กลับมาที่งานเดิม · ส่งตำแหน่งต่อให้แล้ว'); startTracking(); }
+    else toast('กลับมาที่เที่ยว #'+t.id+' · กดเริ่มวิ่งเมื่อพร้อม');
+    return true;
+  }catch(e){ return false; }
+}
+
+$('btnLogin').onclick = async () => {
+  const id = $('selVeh').value; if(!id) return toast('เลือกรถก่อน',true);
+  const {data} = await sb.from('vehicles').select('*').eq('id',id).single();
+  S.veh = data; localStorage.setItem('tms_veh', id);
+  $('hPlate').textContent = data.plate;
+  $('hWho').textContent = 'คนขับ: ' + (data.driver_name||'—');
+  loadTrips();
+};
+
+/* ---------- เที่ยววันนี้ ---------- */
+async function loadTrips(){
+  const today = new Date().toISOString().slice(0,10);
+  const {data} = await sb.from('trips').select('*, stops(count)')
+    .eq('vehicle_id',S.veh.id).eq('trip_date',today).order('id');
+  $('tripList').innerHTML = (!data||!data.length)
+    ? '<div class="card empty">ยังไม่มีเที่ยววิ่งของวันนี้<br>ให้ฝ่ายวางแผนสร้างเที่ยวให้ก่อน</div>'
+    : data.map(t=>`<div class="card" style="cursor:pointer" onclick="openTrip(${t.id})">
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <div><div class="disp" style="font-size:17px">เที่ยว #${t.id}</div>
+          <div style="font-size:13px;color:var(--mute)">${t.stops[0]?.count||0} จุดส่ง · ${t.note||''}</div></div>
+          <span class="tag${t.status==='done'?' done':''}">${t.status}</span></div></div>`).join('');
+  go('scTrips');
+}
+
+window.openTrip = async (id) => {
+  const {data:t} = await sb.from('trips').select('*').eq('id',id).single();
+  S.trip = t; saveSession(); await loadStops(); go('scRun');
+};
+
+async function loadStops(){
+  const {data} = await sb.from('stops').select('*, items(*)').eq('trip_id',S.trip.id).order('seq');
+  S.stops = data||[]; renderRun();
+}
+
+/* ---------- หน้าวิ่งงาน ---------- */
+function renderRun(){
+  initMap(); drawStopsOnMap(); updateNavCard(null,null);
+  if(S.lastPos) updateMe(S.lastPos);
+  else if(!meMk){                       /* ยังไม่มี GPS → ซูมให้เห็นจุดส่งทั้งเที่ยว */
+    const pts=S.stops.filter(s=>s.dest_lat!=null).map(s=>[s.dest_lat,s.dest_lng]);
+    if(pts.length) dmap.fitBounds(L.latLngBounds(pts).pad(0.3));
+  }
+  setTimeout(()=>dmap&&dmap.invalidateSize(),150);
+  const rail = S.stops.map((s,i)=>{
+    const k = ST[s.status]?.[1]||'';
+    const now = (!k && S.stops.slice(0,i).every(x=>x.status!=='pending'&&x.status!=='arrived')) ? ' now':'';
+    return `<div class="bead ${k}${now}">${k==='done'?'✓':s.seq}</div>` +
+      (i<S.stops.length-1 ? `<div class="seg ${k?'done':''}"></div>` : '');
+  }).join('');
+  $('rail').innerHTML = rail || '';
+
+  $('stopList').innerHTML = S.stops.map(s=>{
+    const done = ['delivered','partial','returned'].includes(s.status);
+    const k = ST[s.status]?.[1]||'';
+    const n = s.items?.length||0;
+    return `<div class="stop ${done?'done':(s.status==='arrived'?'now':'')}">
+      <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
+        <div style="min-width:0">
+          <div class="cust">${s.seq}. ${s.customer}</div>
+          <div class="addr">${s.address||''}</div>
+          <div class="addr mono" style="margin-top:3px">${n} รายการ${
+            s.eta?' · ตามแผน '+String(s.eta).slice(0,5)+' น.':''}${s.done_at?' · ส่ง '+hhmm(s.done_at):''}</div>
+          ${(()=>{ const m=lateMin(s);
+            if(m==null) return '';
+            if(m>LATE_MIN) return `<div class="addr" style="color:var(--alert);margin-top:2px">ช้ากว่าแผน ${lateTxt(m)}</div>`;
+            return done ? `<div class="addr" style="color:var(--live);margin-top:2px">ส่งตามแผน</div>` : '';
+          })()}
+        </div>
+        <span class="tag ${s.approval_status==='pending'?'partial':(s.approval_status==='rejected'?'ret':k)}">${
+        s.approval_status==='pending'?'รออนุมัติ':(s.approval_status==='rejected'?'ไม่อนุมัติ':(ST[s.status]?.[0]||s.status))}</span>
+      </div>
+      <div style="height:8px"></div>
+      <button class="${done?'btn-ghost':'btn'} btn-sm" onclick="openPod(${s.id})">
+        ${done?'ดู / แก้ไข':'ยืนยันการส่ง'}</button>
+    </div>`;
+  }).join('') || '<div class="empty">เที่ยวนี้ยังไม่มีจุดส่ง</div>';
+}
+
+/* ============================================================
+   แผนที่นำทางฝั่งคนขับ (สไตล์แอปเรียกรถ)
+   ============================================================ */
+let dmap=null, meMk=null, meHeading=0, stopMks=null, routeLine=null, routeCase=null, geoRing=null;
+let lastRouteAt=0, lastRoutePos=null, routeStopId=null, mapFollow=true;
+
+function initMap(){
+  if(dmap) return;
+  dmap = L.map('dmap',{zoomControl:false, attributionControl:false}).setView([14.07,100.61],13);
+  L.tileLayer(TILE_URL,{maxZoom:19}).addTo(dmap);
+  L.control.attribution({prefix:false}).addAttribution(TILE_ATTR).addTo(dmap);
+  stopMks = L.layerGroup().addTo(dmap);
+  dmap.on('dragstart', ()=> mapFollow=false);              // ลากเอง = หยุดตาม
+  setTimeout(()=>dmap.invalidateSize(),150);
+}
+window.toggleMap = () => {
+  const w=$('mapwrap'), mini=w.classList.toggle('mini');
+  $('mapToggle').textContent = mini?'ขยายแผนที่':'ย่อแผนที่';
+  setTimeout(()=>dmap&&dmap.invalidateSize(),180);
+};
+/* ---------- ไอคอน: รถบรรทุก / กล่องสินค้า / คลัง (วาดเป็น SVG ในหมุด) ---------- */
+/* เลือกสีเส้นในไอคอนให้ตัดกับสีพื้น — พื้นสว่างใช้หมึกเข้ม พื้นเข้มใช้หมึกอ่อน */
+const inkOn = hex => { const c=hex.replace('#','');
+  const r=parseInt(c.slice(0,2),16), g=parseInt(c.slice(2,4),16), b=parseInt(c.slice(4,6),16);
+  return (0.299*r + 0.587*g + 0.114*b) > 140 ? '#0E1520' : '#F2F6FB'; };
+const SVG_TRUCK = (c,bg) => `<svg width="19" height="14" viewBox="0 0 20 14" fill="${c}">
+  <rect x="0.5" y="1.5" width="10.5" height="7.5" rx="1.2"/>
+  <path d="M11.6 3.8h3.2l3 3.4V9h-6.2z"/>
+  <circle cx="4.6" cy="10.6" r="2.1"/><circle cx="14.6" cy="10.6" r="2.1"/>
+  <circle cx="4.6" cy="10.6" r=".8" fill="${bg}"/><circle cx="14.6" cy="10.6" r=".8" fill="${bg}"/></svg>`;
+const SVG_BOX = c => `<path d="M15 6 L22.4 9.7 L15 13.4 L7.6 9.7 Z" fill="${c}"/>
+  <path d="M7.6 10.9 L15 14.6 V21 L7.6 17.3 Z" fill="${c}" opacity=".8"/>
+  <path d="M22.4 10.9 L15 14.6 V21 L22.4 17.3 Z" fill="${c}" opacity=".55"/>`;
+const SVG_WAREHOUSE = `<path d="M17 7.6 L29 15.4 v9.4 H5 v-9.4 Z" fill="#12161C"/>
+  <rect x="11.6" y="16.4" width="10.8" height="8.4" rx="1" fill="#E6EDF5"/>
+  <path d="M12.3 18.6h9.4M12.3 20.8h9.4M12.3 23h9.4" stroke="#12161C" stroke-width="1.15"/>`;
+
+function meIcon(){
+  return L.divIcon({className:'',iconSize:[44,44],iconAnchor:[22,22],
+    html:`<div style="position:relative;width:44px;height:44px">
+      <div style="position:absolute;inset:0;display:grid;place-items:center;
+        transform:rotate(${meHeading}deg);transition:transform .8s linear">
+        <svg width="44" height="44" viewBox="0 0 44 44"><path d="M22 2 L28 12 L16 12 Z" fill="#2FD3B8"/></svg></div>
+      <div style="position:absolute;left:7px;top:7px;width:30px;height:30px;border-radius:50%;
+        display:grid;place-items:center;background:#2FD3B8;border:2px solid #0E1520;
+        box-shadow:0 0 0 7px rgba(47,211,184,.20),0 2px 7px rgba(0,0,0,.5)">
+        ${SVG_TRUCK('#0E1520','#2FD3B8')}</div></div>`});
+}
+function boxIcon(fill, label, op){
+  return L.divIcon({className:'', iconSize:[30,38], iconAnchor:[15,37],
+    html:`<div style="position:relative;width:30px;height:38px;opacity:${op??1};
+        filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))">
+      <svg width="30" height="38" viewBox="0 0 30 38">
+        <path d="M15 36.5C15 36.5 28 22.6 28 14A13 13 0 1 0 2 14C2 22.6 15 36.5 15 36.5Z"
+          fill="${fill}" stroke="#0E1520" stroke-width="2.2"/>${SVG_BOX(inkOn(fill))}</svg>
+      <div style="position:absolute;right:-3px;top:-2px;min-width:17px;height:17px;padding:0 3px;
+        border-radius:9px;background:#0E1520;color:#E6EDF5;font-family:'IBM Plex Mono',monospace;
+        font-size:10px;font-weight:600;display:grid;place-items:center;border:1.5px solid ${fill}"
+        >${label}</div></div>`});
+}
+function depotIcon(){
+  return L.divIcon({className:'', iconSize:[34,42], iconAnchor:[17,41],
+    html:`<div style="width:34px;height:42px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))">
+      <svg width="34" height="42" viewBox="0 0 34 42">
+        <path d="M17 40.5C17 40.5 31.5 25 31.5 15.5A14.5 14.5 0 1 0 2.5 15.5C2.5 25 17 40.5 17 40.5Z"
+          fill="#E6EDF5" stroke="#0E1520" stroke-width="2.2"/>${SVG_WAREHOUSE}</svg></div>`});
+}
+function nextStop(){ return S.stops.find(s=>!['delivered','partial','returned'].includes(s.status)); }
+
+/* ---------- เทียบเวลาจริงกับแผน ---------- */
+const LATE_MIN = 15;
+function etaDate(s){ if(!s?.eta) return null;
+  const [h,m]=String(s.eta).split(':'); const d=new Date(); d.setHours(+h,+m,0,0); return d; }
+function lateMin(s){ const e=etaDate(s); if(!e) return null;
+  return Math.round(((s.done_at?new Date(s.done_at):new Date()) - e)/60000); }
+const lateTxt = m => m>=60 ? `${Math.floor(m/60)} ชม. ${m%60} น.` : `${m} น.`;
+
+function drawStopsOnMap(){
+  if(!dmap) return;
+  stopMks.clearLayers();
+  if(geoRing){ dmap.removeLayer(geoRing); geoRing=null; }
+  const nx = nextStop();
+  /* จุดรับสินค้า (ต้นทาง) — โชว์ไว้ให้เห็นว่าออกจากไหน */
+  if(S.trip?.origin_lat!=null)
+    L.marker([S.trip.origin_lat,S.trip.origin_lng],{icon:depotIcon()})
+      .bindPopup(`<b>จุดรับสินค้า</b><br>${esc(S.trip.origin_name||'—')}`).addTo(stopMks);
+  S.stops.forEach(s=>{
+    if(s.dest_lat==null) return;
+    const done = ['delivered','partial','returned'].includes(s.status);
+    const c = done ? '#4A5F7D' : (s.id===nx?.id ? '#F5A524' : '#8A9CB4');
+    L.marker([s.dest_lat,s.dest_lng],{icon:boxIcon(c, done?'✓':s.seq, done?.65:1),
+      zIndexOffset: s.id===nx?.id ? 300 : 0})
+      .bindPopup(`<b>${s.seq}. ${esc(s.customer)}</b><br>${esc(s.address||'')}`).addTo(stopMks);
+    if(s.id===nx?.id)
+      geoRing = L.circle([s.dest_lat,s.dest_lng],{radius:s.geofence_m||300,
+        color:'#F5A524',weight:1.5,fillOpacity:.07}).addTo(dmap);
+  });
+}
+
+function updateNavCard(distM,secs){
+  const nx = nextStop(), card=$('navcard');
+  if(!nx){ card.style.display='none'; return; }
+  card.style.display='flex';
+  $('navTo').textContent = nx.customer;
+  const lm = lateMin(nx);
+  $('navSeq').innerHTML = `จุดที่ ${nx.seq} จาก ${S.stops.length}`
+    + (nx.eta ? ` · ตามแผน ${String(nx.eta).slice(0,5)} น.` : '')
+    + (lm!=null && lm>LATE_MIN ? ` · <b style="color:var(--alert)">สาย ${lateTxt(lm)}</b>` : '');
+  if(distM!=null){
+    $('navDist').textContent = distM>=1000 ? (distM/1000).toFixed(1)+' กม.' : Math.round(distM)+' ม.';
+    $('navEta').textContent = (secs!=null ? '~'+Math.max(1,Math.round(secs/60))+' นาที' : '')
+      + (routeSrc?' · '+routeSrc:'');
+  } else if(S.lastPos && nx.dest_lat!=null){
+    const d = distM2(S.lastPos.coords.latitude,S.lastPos.coords.longitude,nx.dest_lat,nx.dest_lng);
+    $('navDist').textContent = d>=1000 ? (d/1000).toFixed(1)+' กม.' : Math.round(d)+' ม.';
+    $('navEta').textContent = 'เส้นตรง';
+  } else { $('navDist').textContent='—'; $('navEta').textContent=''; }
+}
+function distM2(a,b,c,d){ const R=6371000,r=x=>x*Math.PI/180;
+  const h=Math.sin(r(c-a)/2)**2+Math.cos(r(a))*Math.cos(r(c))*Math.sin(r(d-b)/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h)); }
+
+/* เส้นทางถนนจริง: ORS เป็นหลัก → OSRM สำรอง → เส้นตรง
+   ขอใหม่เมื่อขยับเกิน 120 ม. เปลี่ยนจุดหมาย หรือครบ 60 วิ */
+let routeSrc='', orsDown=0;            // orsDown = เวลาที่ ORS ล่ม (พัก 10 นาทีค่อยลองใหม่)
+
+async function routeORS(p,nx){
+  if(!ORS_KEY || Date.now()-orsDown < 600000) return null;
+  try{
+    const r = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson',{
+      method:'POST',
+      headers:{'Authorization':ORS_KEY,'Content-Type':'application/json'},
+      body:JSON.stringify({coordinates:[[p.longitude,p.latitude],[nx.dest_lng,nx.dest_lat]]})
+    });
+    if(!r.ok){
+      if(r.status===403||r.status===429) orsDown=Date.now();   // โควตาหมด/ key ผิด → พักไว้
+      return null;
+    }
+    const j = await r.json(); const f = j.features?.[0];
+    if(!f) return null;
+    const sum = f.properties?.summary || {};
+    return {ll:f.geometry.coordinates.map(c=>[c[1],c[0]]),
+            dist:sum.distance, dur:sum.duration, src:'ORS'};
+  }catch(e){ return null; }
+}
+async function routeOSRM(p,nx){
+  try{
+    const u=`https://router.project-osrm.org/route/v1/driving/${p.longitude},${p.latitude};${nx.dest_lng},${nx.dest_lat}?overview=full&geometries=geojson`;
+    const r=await fetch(u); if(!r.ok) return null;
+    const j=await r.json(); const rt=j.routes?.[0]; if(!rt) return null;
+    return {ll:rt.geometry.coordinates.map(c=>[c[1],c[0]]),
+            dist:rt.distance, dur:rt.duration, src:'OSRM'};
+  }catch(e){ return null; }
+}
+
+async function refreshRoute(){
+  const nx = nextStop(), p = S.lastPos?.coords;
+  if(!dmap || !p || !nx || nx.dest_lat==null){
+    [routeCase,routeLine].forEach(l=>l&&dmap?.removeLayer(l)); routeCase=routeLine=null;
+    updateNavCard(null,null); return;
+  }
+  const moved = lastRoutePos ? distM2(p.latitude,p.longitude,lastRoutePos[0],lastRoutePos[1]) : 1e9;
+  const stale = Date.now()-lastRouteAt > 60000;
+  if(routeStopId===nx.id && moved<120 && !stale) return;
+  lastRouteAt=Date.now(); lastRoutePos=[p.latitude,p.longitude]; routeStopId=nx.id;
+
+  const rt = await routeORS(p,nx) || await routeOSRM(p,nx);
+  if(rt){ routeSrc = rt.src; paintRoute(rt.ll, true); updateNavCard(rt.dist, rt.dur); return; }
+  routeSrc='ตรง';
+  paintRoute([[p.latitude,p.longitude],[nx.dest_lat,nx.dest_lng]], false);
+  updateNavCard(null,null);
+}
+/* เส้นนำทาง: เส้นเงาหนาข้างล่าง + เส้นสีไหลไปข้างหน้าข้างบน (อ่านง่ายบนแผนที่สว่าง) */
+function paintRoute(ll, isRoad){
+  if(routeCase) routeCase.setLatLngs(ll);
+  else routeCase = L.polyline(ll,{color:'var(--map-bg)',weight:11,opacity:.4,
+    lineCap:'round',lineJoin:'round'}).addTo(dmap);
+  if(routeLine) routeLine.setLatLngs(ll);
+  else routeLine = L.polyline(ll,{color:'#2FD3B8',weight:6,opacity:.95,
+    lineCap:'round',lineJoin:'round',className:'flow'}).addTo(dmap);
+  routeLine.setStyle({weight:isRoad?6:4, opacity:isRoad?.95:.65});
+  routeCase.bringToBack();
+}
+
+function updateMe(p,anim){
+  if(!dmap) return;
+  const ll=[p.coords.latitude,p.coords.longitude];
+  if(p.coords.heading!=null && !isNaN(p.coords.heading)) meHeading=p.coords.heading;
+  else if(meMk){ const o=meMk.getLatLng();
+    if(o.lat!==ll[0]||o.lng!==ll[1]) meHeading=bearing2([o.lat,o.lng],ll); }
+  if(!meMk){ meMk=L.marker(ll,{icon:meIcon(),zIndexOffset:900}).addTo(dmap); dmap.setView(ll,16); }
+  else { meMk.setIcon(meIcon()); meMk.setLatLng(ll); }
+  if(mapFollow) dmap.panTo(ll,{animate:true,duration:.8});
+  refreshRoute();
+}
+function bearing2(a,b){ const r=x=>x*Math.PI/180,d=x=>x*180/Math.PI;
+  const y=Math.sin(r(b[1]-a[1]))*Math.cos(r(b[0]));
+  const x=Math.cos(r(a[0]))*Math.sin(r(b[0]))-Math.sin(r(a[0]))*Math.cos(r(b[0]))*Math.cos(r(b[1]-a[1]));
+  return (d(Math.atan2(y,x))+360)%360; }
+window.openGmaps = () => {
+  const nx=nextStop(); if(!nx||nx.dest_lat==null) return toast('จุดถัดไปไม่มีพิกัด',true);
+  window.open(`https://www.google.com/maps/dir/?api=1&destination=${nx.dest_lat},${nx.dest_lng}&travelmode=driving`,'_blank');
+};
+/* กลับมาตามตัวเองเมื่อแตะแผนที่ค้าง 2 วิ? ใช้ปุ่มง่ายกว่า: ดับเบิลแตะ = ตามต่อ */
+document.getElementById('dmap').addEventListener('dblclick',()=>{ mapFollow=true;
+  if(meMk) dmap.panTo(meMk.getLatLng()); });
+
+/* ---------- GPS ---------- */
+async function startTracking(){
+  if(!navigator.geolocation) return toast('เครื่องนี้ไม่รองรับ GPS',true);
+  if(S.trip.status!=='running'){
+    await sb.from('trips').update({status:'running',started_at:new Date().toISOString()}).eq('id',S.trip.id);
+    S.trip.status='running';
+  }
+  S.tracking = true; $('pulse').classList.add('on');
+  $('statusBox').classList.add('live');
+  $('stTitle').textContent = 'กำลังส่งตำแหน่ง';
+  $('stSub').innerHTML = `เที่ยว #${S.trip.id} · ส่งทุก ${PING_SEC} วินาที · `
+    + (NATIVE ? `<b style="color:var(--live)">โหมดแอป — พับจอ/สลับแอปได้</b>`
+              : `<b style="color:var(--signal)">โหมดเว็บ — ต้องเปิดจอค้างไว้</b>`);
+  if(!NATIVE){ try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(e){} }
+  startWatch();
+  saveSession(); drawBar('scRun');
+}
+/* ============================================================
+   แหล่ง GPS มี 2 ทาง
+   1) โหมดแอป (Capacitor) — ปลั๊กอิน background geolocation ทำงานเป็น foreground service
+      พับจอ สลับแอป ปิดจอ ก็ยังส่งตำแหน่งอยู่ มีแถบแจ้งเตือนค้างบนมือถือ
+   2) โหมดเว็บ (เปิดในเบราว์เซอร์) — watchPosition ธรรมดา หยุดเมื่อไม่ได้อยู่หน้าจอ
+   โค้ดตั้งแต่ onPos ลงไปใช้ร่วมกันทั้งสองโหมด ไม่ต้องแยกสองชุด
+   ============================================================ */
+const NATIVE = !!(window.Capacitor?.isNativePlatform?.()
+              && window.Capacitor?.Plugins?.BackgroundGeolocation);
+const BG = () => window.Capacitor.Plugins.BackgroundGeolocation;
+let bgWatcher = null;
+
+function startWatch(){
+  if(NATIVE) return startWatchNative();
+  if(!navigator.geolocation) return;
+  if(S.watchId!=null) try{ navigator.geolocation.clearWatch(S.watchId); }catch(e){}
+  S.watchId = navigator.geolocation.watchPosition(onPos,
+    e=>toast('อ่าน GPS ไม่ได้: '+e.message,true),
+    {enableHighAccuracy:true,maximumAge:5000,timeout:20000});
+}
+async function startWatchNative(){
+  if(bgWatcher) return;                       // ตัวเดิมยังทำงานอยู่ ไม่ต้องเปิดซ้ำ
+  try{
+    bgWatcher = await BG().addWatcher({
+      backgroundTitle: 'TMS · กำลังวิ่งงาน',
+      backgroundMessage: 'กำลังส่งตำแหน่งให้ศูนย์ควบคุม',
+      requestPermissions: true,
+      stale: false,
+      distanceFilter: 20                      // ขยับเกิน 20 ม. ค่อยรายงาน (ประหยัดแบต)
+    }, (loc, err) => {
+      if(err){
+        /* ไม่ล้าง id ทิ้ง — ต้องเก็บไว้ปิด watcher ตอนกดหยุดวิ่ง ไม่งั้นค้างกินแบต */
+        if(err.code === 'NOT_AUTHORIZED')
+          toast('ต้องอนุญาตตำแหน่งแบบ "ตลอดเวลา" ในตั้งค่าแอปก่อน', true);
+        else toast('อ่าน GPS ไม่ได้: '+(err.message||err.code), true);
+        return;
+      }
+      if(!loc) return;
+      onPos({coords:{ latitude:loc.latitude, longitude:loc.longitude,
+        accuracy:loc.accuracy, speed:loc.speed, heading:loc.bearing }});
+    });
+  }catch(e){ bgWatcher=null; toast('เปิดการติดตามเบื้องหลังไม่สำเร็จ: '+e.message, true); }
+}
+async function stopWatchNative(){
+  if(!bgWatcher) return;
+  try{ await BG().removeWatcher({id:bgWatcher}); }catch(e){}
+  bgWatcher = null;
+}
+async function stopTracking(){
+  S.tracking=false; $('pulse').classList.remove('on'); $('statusBox').classList.remove('live');
+  $('stTitle').textContent='หยุดส่งตำแหน่งแล้ว'; $('stSub').textContent='กดเริ่มวิ่งอีกครั้งเมื่อพร้อม';
+  if(S.watchId!=null) navigator.geolocation.clearWatch(S.watchId);
+  S.watchId=null;
+  await stopWatchNative();
+  try{ await S.wake?.release(); }catch(e){} S.wake=null;
+  saveSession(); drawBar('scRun');
+}
+function onPos(p){
+  S.lastPos = p;
+  updateMe(p);
+  const kmh = p.coords.speed!=null ? Math.max(0,p.coords.speed*3.6) : null;
+  $('gSpeed').textContent = kmh!=null ? kmh.toFixed(0)+' กม./ชม.' : '—';
+  $('gAcc').textContent = '±'+Math.round(p.coords.accuracy)+' ม.';
+  const now = Date.now();
+  if(now - S.lastSent < PING_SEC*1000) return;
+  S.lastSent = now;
+  /* เข้าคิวก่อนเสมอ แล้วค่อยส่ง — เน็ตหลุดหรือสลับแอปอยู่ พิกัดก็ไม่หาย
+     ใส่ recorded_at เองด้วย เวลาที่บันทึกจะได้เป็นเวลาที่วิ่งจริง ไม่ใช่เวลาที่ส่งขึ้นทีหลัง */
+  queuePing({
+    vehicle_id:S.veh.id, trip_id:S.trip.id,
+    lat:p.coords.latitude, lng:p.coords.longitude,
+    speed_kmh:kmh, accuracy_m:p.coords.accuracy, heading:p.coords.heading,
+    recorded_at:new Date(now).toISOString()
+  });
+}
+/* สลับแอปแล้วกลับมา: ขอจอค้างใหม่ · เริ่ม watch ใหม่ · ส่งคิวที่ค้าง · ดึงงานล่าสุด */
+document.addEventListener('visibilitychange', async ()=>{
+  if(document.visibilityState==='hidden'){ S.hiddenAt = Date.now(); saveSession(); return; }
+  const gap = S.hiddenAt ? Date.now()-S.hiddenAt : 0; S.hiddenAt = null;
+  flushQ();
+  if(S.tracking){
+    if(!NATIVE){                                      // โหมดเว็บเท่านั้นที่ต้องกู้คืน
+      if(!S.wake){ try{ S.wake = await navigator.wakeLock?.request('screen'); }catch(e){} }
+      startWatch();
+      S.lastSent = 0;                                 // ให้ยิงพิกัดทันทีที่ได้ตำแหน่งแรก
+      if(gap > 60000) toast(`หยุดส่งตำแหน่งไป ${Math.round(gap/60000)} นาทีตอนสลับแอป · ต่อให้แล้ว`);
+    }
+  }
+  if(S.trip && $('scRun').classList.contains('on')) loadStops();   // ดึงสถานะจุดส่งล่าสุด
+  if(dmap) setTimeout(()=>dmap.invalidateSize(),120);
+});
+window.addEventListener('pagehide', saveSession);
+
+/* ---------- Geofence ---------- */
+function distM(a,b,c,d){                       // Haversine (เมตร)
+  const R=6371000, r=x=>x*Math.PI/180;
+  const dLa=r(c-a), dLo=r(d-b);
+  const h=Math.sin(dLa/2)**2 + Math.cos(r(a))*Math.cos(r(c))*Math.sin(dLo/2)**2;
+  return 2*R*Math.asin(Math.sqrt(h));
+}
+/* คืนค่า: ok = ส่งได้เลย | far = อยู่นอกรัศมี | nogps = ไม่มีพิกัด | nodest = จุดส่งไม่มีพิกัด */
+function geoCheck(){
+  const s = S.stop, p = S.lastPos?.coords;
+  if(s.approval_status==='approved') return {v:'approved'};
+  if(s.approval_status==='pending')  return {v:'pending'};
+  if(s.approval_status==='rejected') return {v:'rejected'};
+  if(!p) return {v:'nogps'};
+  if(s.dest_lat==null||s.dest_lng==null) return {v:'nodest'};
+  const d = distM(p.latitude, p.longitude, s.dest_lat, s.dest_lng);
+  const lim = s.geofence_m ?? 300;
+  return {v: d<=lim ? 'ok':'far', d:Math.round(d), lim, acc:Math.round(p.accuracy)};
+}
+function renderGeo(){
+  const g = geoCheck(); S.geo = g;
+  const box=$('geoBox'), ask=$('geoAsk');
+  box.className='geo'; ask.style.display='none';
+  const set=(cls,ic,t,s)=>{ box.classList.add(cls); $('geoIc').textContent=ic;
+    $('geoT').textContent=t; $('geoS').innerHTML=s; };
+  switch(g.v){
+    case 'ok': set('ok','✓','อยู่ในพื้นที่จุดส่ง',
+      `ห่างจากจุดหมาย <b>${g.d} ม.</b> · กำหนดไว้ไม่เกิน <b>${g.lim} ม.</b><br>บันทึกการส่งได้เลย`); break;
+    case 'approved': set('ok','✓','ศูนย์อนุมัติแล้ว','บันทึกการส่งได้เลย'); break;
+    case 'far':
+      set('bad','⚠','อยู่นอกพื้นที่จุดส่ง',
+        `ห่างจากจุดหมาย <b>${g.d} ม.</b> · เกินที่กำหนด <b>${g.lim} ม.</b><br>
+         ความแม่นยำ GPS ±${g.acc} ม. · ต้องขออนุมัติจากศูนย์ก่อน`);
+      ask.style.display='block'; break;
+    case 'pending':
+      set('warn','◷','รอศูนย์อนุมัติ',
+        `ส่งคำขอแล้ว${S.stop.approval_distance_m?` (ห่าง <b>${Math.round(S.stop.approval_distance_m)} ม.</b>)`:''}
+         <div class="wait"><span class="spin"></span>รอผลอนุมัติ หน้าจอจะอัปเดตเอง</div>`); break;
+    case 'rejected':
+      set('bad','✕','ศูนย์ไม่อนุมัติ',
+        `${S.stop.approval_note ? esc(S.stop.approval_note)+'<br>' : ''}ติดต่อศูนย์ หรือเข้าใกล้จุดส่งแล้วลองใหม่`);
+      ask.style.display='block'; break;
+    case 'nogps': set('bad','⚠','ยังไม่มีพิกัด GPS',
+      'กดเริ่มวิ่งเพื่อเปิดการส่งตำแหน่งก่อน แล้วรอสักครู่'); break;
+    case 'nodest': set('warn','◎','จุดส่งนี้ไม่ได้ตั้งพิกัดไว้',
+      'ระบบข้ามการตรวจระยะ บันทึกการส่งได้ตามปกติ'); break;
+  }
+  drawBar('scPod');
+}
+const esc = s => String(s??'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+
+window.askApproval = async () => {
+  const p = S.lastPos?.coords; if(!p) return toast('ยังไม่มีพิกัด GPS',true);
+  const reason = $('podReason').value.trim();
+  if(!reason) return toast('ใส่เหตุผลก่อนขออนุมัติ',true);
+  const {error} = await sb.from('stops').update({
+    approval_status:'pending', approval_reason:reason,
+    approval_distance_m:S.geo.d, approval_lat:p.latitude, approval_lng:p.longitude,
+    approval_req_at:new Date().toISOString(), approval_note:null
+  }).eq('id',S.stop.id);
+  if(error) return toast('ส่งคำขอไม่สำเร็จ ลองอีกครั้ง',true);
+  S.stop.approval_status='pending'; S.stop.approval_distance_m=S.geo.d;
+  $('podReason').value=''; toast('ส่งคำขอไปที่ศูนย์แล้ว'); renderGeo();
+};
+
+/* ฟังผลอนุมัติแบบสด */
+sb.channel('driver-approval')
+  .on('postgres_changes',{event:'UPDATE',schema:'public',table:'stops'}, p=>{
+    const n=p.new; if(!S.stop || n.id!==S.stop.id) return;
+    if(n.approval_status===S.stop.approval_status) return;
+    Object.assign(S.stop, n);
+    if(n.approval_status==='approved') toast('ศูนย์อนุมัติแล้ว บันทึกการส่งได้เลย');
+    if(n.approval_status==='rejected') toast('ศูนย์ไม่อนุมัติคำขอ',true);
+    renderGeo();
+  }).subscribe();
+
+/* ---------- ยืนยันการส่ง ---------- */
+window.openPod = async (stopId) => {
+  const s = S.stops.find(x=>x.id===stopId); S.stop = s;
+  $('podCust').textContent = s.seq+'. '+s.customer;
+  $('podAddr').textContent = s.address||'';
+  $('podRecv').value = s.receiver_name||''; $('podNote').value = s.note||'';
+  S.items = {}; (s.items||[]).forEach(it => S.items[it.id] = {...it,
+    status: it.status||'pending', qty_delivered: it.qty_delivered ?? it.qty_plan});
+  const draft = LS.get('tms_pod', null);            // กู้ที่กรอกค้างไว้ก่อนสลับแอป
+  if(draft && draft.stopId===s.id){
+    Object.entries(draft.items||{}).forEach(([id,d])=>{ if(S.items[id]) Object.assign(S.items[id],d); });
+    if(draft.recv) $('podRecv').value = draft.recv;
+    if(draft.note) $('podNote').value = draft.note;
+  }
+  if(s.status==='pending'){
+    await sb.from('stops').update({status:'arrived',arrived_at:new Date().toISOString()}).eq('id',s.id);
+    s.status='arrived';
+  }
+  renderItems(); go('scPod'); renderGeo();
+  clearInterval(S.geoTimer); S.geoTimer = setInterval(()=>{      // อัปเดตระยะสดทุก 3 วิ
+    if($('scPod').classList.contains('on')) renderGeo(); else clearInterval(S.geoTimer);
+  },3000);
+};
+function savePodDraft(){
+  if(!S.stop) return;
+  const items = {}; Object.values(S.items).forEach(it=>
+    items[it.id] = {status:it.status, qty_delivered:it.qty_delivered});
+  LS.set('tms_pod', {stopId:S.stop.id, items, recv:$('podRecv').value, note:$('podNote').value});
+}
+const CYCLE = {pending:'delivered', delivered:'partial', partial:'returned', returned:'delivered'};
+window.cycleItem = (id) => {
+  const it = S.items[id]; it.status = CYCLE[it.status]||'delivered';
+  if(it.status==='delivered') it.qty_delivered = it.qty_plan;
+  savePodDraft();
+  if(it.status==='returned')  it.qty_delivered = 0;
+  renderItems();
+};
+window.setQty = (id,v) => { S.items[id].qty_delivered = parseFloat(v)||0; savePodDraft(); };
+function renderItems(){
+  $('itemList').innerHTML = Object.values(S.items).map(it=>{
+    const cls = {delivered:'ok',partial:'part',returned:'ret'}[it.status]||'';
+    const mark = {delivered:'✓',partial:'~',returned:'↩'}[it.status]||'';
+    return `<div class="item ${cls}">
+      <div class="tick" onclick="cycleItem(${it.id})">${mark}</div>
+      <div class="nm" onclick="cycleItem(${it.id})">
+        <b>${it.item_name}</b><span>${it.item_code||''} · แผน ${it.qty_plan} ${it.unit||''}</span></div>
+      ${it.status==='partial'
+        ? `<input class="qty mono" type="number" inputmode="decimal" value="${it.qty_delivered}"
+             onchange="setQty(${it.id},this.value)">`
+        : `<div class="mono" style="color:var(--mute);font-size:14px">${
+             it.status==='pending'?'—':it.qty_delivered+' '+(it.unit||'')}</div>`}
+    </div>`;
+  }).join('') || '<div class="empty">จุดนี้ไม่มีรายการสินค้า</div>';
+}
+
+async function savePod(){
+  const g = geoCheck();
+  if(g.v==='far')      return toast('อยู่นอกพื้นที่จุดส่ง ต้องขออนุมัติจากศูนย์ก่อน',true);
+  if(g.v==='pending')  return toast('กำลังรอศูนย์อนุมัติ',true);
+  if(g.v==='rejected') return toast('ศูนย์ไม่อนุมัติ ติดต่อศูนย์หรือเข้าใกล้จุดส่งแล้วขอใหม่',true);
+  if(g.v==='nogps')    return toast('ยังไม่มีพิกัด GPS กดเริ่มวิ่งก่อน',true);
+  const list = Object.values(S.items);
+  if(list.some(i=>i.status==='pending')) return toast('ยังมีสินค้าที่ยังไม่ระบุสถานะ',true);
+  const all = list.every(i=>i.status==='delivered');
+  const none = list.length && list.every(i=>i.status==='returned');
+  const stopStatus = none ? 'returned' : (all ? 'delivered' : 'partial');
+  const p = S.lastPos?.coords;
+
+  for(const it of list){
+    await sb.from('items').update({status:it.status, qty_delivered:it.qty_delivered}).eq('id',it.id);
+  }
+  const {error} = await sb.from('stops').update({
+    status:stopStatus, done_at:new Date().toISOString(),
+    done_lat:p?.latitude ?? null, done_lng:p?.longitude ?? null,
+    receiver_name:$('podRecv').value||null, note:$('podNote').value||null
+  }).eq('id',S.stop.id);
+  if(error) return toast('บันทึกไม่สำเร็จ ลองอีกครั้ง',true);
+  LS.del('tms_pod');
+  toast('บันทึกการส่งเรียบร้อย');
+  await loadStops(); go('scRun');
+}
+
+async function endTrip(){
+  if(S.stops.some(s=>s.status==='pending'||s.status==='arrived'))
+    if(!confirm('ยังมีจุดส่งที่ยังไม่ยืนยัน จบเที่ยวเลยหรือไม่?')) return;
+  await stopTracking();
+  await sb.from('trips').update({status:'done',ended_at:new Date().toISOString()}).eq('id',S.trip.id);
+  LS.del('tms_session'); LS.del('tms_pod');
+  toast('จบเที่ยวเรียบร้อย'); loadTrips();
+}
+
+/* ---------- แถบปุ่มล่าง ---------- */
+function drawBar(screen){
+  const b = $('barInner');
+  if(screen==='scLogin'||screen==='scTrips'){ $('bar').style.display='none'; return; }
+  $('bar').style.display='block';
+  if(screen==='scPod'){
+    const v = S.geo?.v;
+    const blocked = ['far','pending','rejected','nogps'].includes(v);
+    const txt = {far:'ต้องขออนุมัติก่อนบันทึก', pending:'รอศูนย์อนุมัติ…',
+                 rejected:'ศูนย์ไม่อนุมัติ', nogps:'ยังไม่มีพิกัด GPS'}[v] || 'บันทึกการส่ง';
+    b.innerHTML = blocked
+      ? `<button class="btn-ghost" style="opacity:.55" onclick="savePod()">${txt}</button>`
+      : `<button class="btn-live" onclick="savePod()">บันทึกการส่ง</button>`;
+  } else {
+    b.innerHTML = S.tracking
+      ? `<div class="row"><button class="btn-stop" onclick="stopTracking()">หยุดส่งตำแหน่ง</button>
+         <button class="btn-ghost" onclick="endTrip()">จบเที่ยว</button></div>`
+      : `<button class="btn" onclick="startTracking()">เริ่มวิ่ง · ส่งตำแหน่ง</button>`;
+  }
+}
+setTheme(theme(), false);          // ตั้งไอคอนปุ่มธีม (พื้นแผนที่ตั้งตอน initMap)
+window.savePod=savePod; window.startTracking=startTracking;
+window.stopTracking=stopTracking; window.endTrip=endTrip; window.go=go;
+</script>
+</body>
+</html>

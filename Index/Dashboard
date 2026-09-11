@@ -1,0 +1,877 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>TMS · ศูนย์ควบคุมการขนส่ง</title>
+<script>/* ตั้งธีมก่อนวาดหน้า กันจอกระพริบตอนโหลด */
+try{var _t=localStorage.getItem('tms_theme')||(matchMedia('(prefers-color-scheme: light)').matches?'light':'dark');
+document.documentElement.dataset.theme=_t;}catch(e){document.documentElement.dataset.theme='dark';}</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Anuphan:wght@500;700&family=IBM+Plex+Sans+Thai:wght@400;500;600&family=IBM+Plex+Mono:wght@500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<style>
+/* ============================================================
+   ธีม — มืด (ค่าเริ่มต้นตามเครื่อง) / สว่าง · สลับที่ปุ่มมุมขวาบน จำค่าไว้ในเครื่อง
+   โหมดมืด = ใช้ในห้องคุมกลางคืน · โหมดสว่าง = ใช้ในออฟฟิศ/กลางแดด
+   ============================================================ */
+:root{
+  --ink:#0E1520; --panel:#141D2A; --panel2:#1B2636; --line:#26344A;
+  --paper:#E6EDF5; --mute:#8A9CB4;
+  --signal:#F5A524; --live:#2FD3B8; --alert:#E5544B; --dim:#4A5F7D;
+  --on-signal:#12161C; --on-live:#0B1F1B; --on-alert:#FFFFFF;
+  --hint-t:#F2D9A8; --map-bg:var(--map-bg);
+  --shadow:0 6px 22px rgba(0,0,0,.42);
+  color-scheme:dark;
+}
+:root[data-theme="light"]{
+  --ink:#E9EEF5; --panel:#FFFFFF; --panel2:#F2F6FB; --line:#D2DCEA;
+  --paper:#132030; --mute:#566780;
+  --signal:#BE7009; --live:#0B8C79; --alert:#BC3A30; --dim:#8DA0B7;
+  --on-signal:#FFFFFF; --on-live:#FFFFFF; --on-alert:#FFFFFF;
+  --hint-t:#7A4A05; --map-bg:#E4EAF1;
+  --shadow:0 6px 20px rgba(23,42,71,.14);
+  color-scheme:light;
+}
+.thm{background:transparent;border:1px solid var(--line);color:var(--mute);border-radius:9px;
+  padding:7px 9px;cursor:pointer;display:grid;place-items:center;line-height:0;width:auto;flex:none}
+.thm:hover{color:var(--signal);border-color:var(--signal)}
+.thm svg{width:16px;height:16px;display:block}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--ink);color:var(--paper);
+  font-family:'IBM Plex Sans Thai',system-ui,sans-serif;font-size:14px;overflow:hidden}
+h1,h2,h3,.disp{font-family:'Anuphan',sans-serif;font-weight:700;margin:0}
+.mono{font-family:'IBM Plex Mono',monospace;font-variant-numeric:tabular-nums}
+
+.app{display:grid;grid-template-rows:56px 1fr;height:100%}
+.top{display:flex;align-items:center;gap:16px;padding:0 20px;border-bottom:1px solid var(--line);background:var(--panel)}
+.top h1{font-size:17px;letter-spacing:.02em}
+.top .tag{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--signal)}
+.top .right{margin-left:auto;display:flex;align-items:center;gap:18px;color:var(--mute);font-size:12px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--live);display:inline-block;margin-right:6px}
+
+.main{display:grid;grid-template-columns:340px 1fr 0;min-height:0;transition:grid-template-columns .22s}
+.main.detail{grid-template-columns:340px 1fr 380px}
+@media(max-width:1100px){.main,.main.detail{grid-template-columns:280px 1fr}
+  .side.detail{position:absolute;right:0;top:56px;bottom:0;width:340px;z-index:500}}
+
+.side{border-right:1px solid var(--line);background:var(--panel);overflow-y:auto;min-height:0}
+.side.detail{border-right:0;border-left:1px solid var(--line);overflow-x:hidden}
+.side.detail:not(.on){display:none}
+#map{height:100%;background:var(--map-bg)}
+
+.sec{padding:14px 16px;border-bottom:1px solid var(--line)}
+.lbl{font-size:11px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute);margin-bottom:10px}
+.kpis{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.kpi{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px}
+.kpi b{display:block;font-family:'IBM Plex Mono',monospace;font-size:20px;font-weight:500;line-height:1.2}
+.kpi span{font-size:11px;color:var(--mute)}
+
+/* vehicle card — rail is the signature */
+.veh{padding:13px 16px;border-bottom:1px solid var(--line);cursor:pointer;border-left:3px solid transparent}
+.veh:hover{background:var(--panel2)}
+.veh.sel{background:var(--panel2);border-left-color:var(--signal)}
+.veh .hd{display:flex;justify-content:space-between;align-items:baseline;gap:8px}
+.veh .plate{font-family:'IBM Plex Mono',monospace;font-size:14px}
+.veh .drv{font-size:12px;color:var(--mute)}
+.veh .st{font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+.st.moving{color:var(--live)} .st.idle{color:var(--signal)} .st.off{color:var(--dim)}
+.rail{display:flex;align-items:center;margin-top:10px}
+.bead{flex:none;width:18px;height:18px;border-radius:50%;border:2px solid var(--dim);background:var(--ink);
+  display:grid;place-items:center;font-size:9px;font-weight:600;color:var(--mute)}
+.bead.done{background:var(--live);border-color:var(--live);color:var(--on-live)}
+.bead.partial{background:var(--signal);border-color:var(--signal);color:var(--on-signal)}
+.bead.ret{background:var(--alert);border-color:var(--alert);color:#fff}
+.bead.arrived{border-color:var(--signal);box-shadow:0 0 0 3px rgba(245,165,36,.18)}
+.seg{flex:1;height:2px;background:var(--dim)} .seg.done{background:var(--live)}
+.veh .meta{display:flex;gap:9px 14px;margin-top:8px;font-size:11px;color:var(--mute);
+  flex-wrap:wrap;align-items:center}
+/* ตัวชี้วัดตรงเวลา — หัวใจของงานขนส่ง */
+.kpi.bad b{color:var(--alert)}
+.otbar{margin-top:9px;height:20px;border-radius:99px;background:var(--panel2);border:1px solid var(--line);
+  position:relative;overflow:hidden;display:flex;align-items:center}
+.otfill{position:absolute;left:0;top:0;bottom:0;background:linear-gradient(90deg,var(--live),color-mix(in srgb,var(--live) 55%, var(--signal)));opacity:.85}
+.otbar span{position:relative;z-index:1;font-size:11px;padding:0 10px;color:var(--paper);
+  font-family:'IBM Plex Mono',monospace;letter-spacing:.02em}
+.chipx{display:inline-flex;align-items:center;gap:4px;font-size:11px;padding:2px 7px;border-radius:99px;
+  border:1px solid var(--line);color:var(--mute);white-space:nowrap;font-family:'IBM Plex Mono',monospace}
+.chipx.late{color:var(--alert);border-color:color-mix(in srgb,var(--alert) 45%, transparent);
+  background:color-mix(in srgb,var(--alert) 12%, transparent)}
+.chipx.ontime{color:var(--live);border-color:color-mix(in srgb,var(--live) 45%, transparent)}
+.chipx.early{color:var(--live);border-color:color-mix(in srgb,var(--live) 40%, transparent)}
+
+/* detail panel */
+.dtl-hd{padding:16px;border-bottom:1px solid var(--line)}
+.dtl-hd .x{float:right;cursor:pointer;color:var(--mute);font-size:20px;line-height:1}
+.stop{padding:13px 16px;border-bottom:1px solid var(--line);border-left:3px solid var(--dim)}
+.stop.delivered{border-left-color:var(--live)} .stop.partial{border-left-color:var(--signal)}
+.stop.returned{border-left-color:var(--alert)} .stop.arrived{border-left-color:var(--signal)}
+.stop .cust{font-family:'Anuphan';font-weight:700;font-size:15px}
+.stop .sub{font-size:12px;color:var(--mute)}
+.itm{display:flex;justify-content:space-between;gap:8px;font-size:12px;padding:5px 0;border-bottom:1px dashed var(--line)}
+.itm:last-child{border:0}
+.itm .s{font-family:'IBM Plex Mono',monospace}
+.s.delivered{color:var(--live)} .s.partial{color:var(--signal)} .s.returned{color:var(--alert)} .s.pending{color:var(--mute)}
+.btn{background:var(--panel2);border:1px solid var(--line);color:var(--paper);border-radius:8px;
+  padding:8px 12px;font-family:inherit;font-size:12px;cursor:pointer}
+.btn:hover{border-color:var(--signal)}
+.btn.on{background:var(--signal);color:var(--on-signal);border-color:var(--signal)}
+.empty{color:var(--mute);padding:22px 16px;font-size:13px;text-align:center}
+
+/* approval queue */
+.appr{background:linear-gradient(180deg,rgba(245,165,36,.11),rgba(245,165,36,.02));
+  border:1px solid rgba(245,165,36,.45);border-radius:10px;padding:12px;margin-bottom:10px}
+.appr .who{font-family:'Anuphan';font-weight:700;font-size:14px}
+.appr .sub{font-size:12px;color:var(--mute);margin-top:2px}
+.appr .far{font-family:'IBM Plex Mono',monospace;font-size:13px;color:var(--signal);margin-top:6px}
+.appr .rsn{font-size:12px;color:var(--paper);background:color-mix(in srgb, var(--ink) 60%, transparent);border-radius:7px;
+  padding:7px 9px;margin-top:8px;line-height:1.5}
+.appr .acts{display:flex;gap:6px;margin-top:10px}
+.appr .acts button{flex:1;padding:8px;font-size:12px;border-radius:7px}
+.b-ok{background:var(--live);color:var(--on-live);border:0}
+.b-no{background:transparent;color:var(--alert);border:1px solid rgba(229,84,75,.45)}
+.b-loc{background:transparent;color:var(--mute);border:1px solid var(--line);flex:0 0 auto!important;padding:8px 10px!important}
+@keyframes flash{0%,100%{opacity:1}50%{opacity:.45}}
+.blink{animation:flash 1.3s infinite}
+@media (prefers-reduced-motion:reduce){.blink{animation:none}}
+
+/* ---------- ปุ่มสลับชั้นข้อมูลบนแผนที่ + คำอธิบายสี ---------- */
+.tg{background:var(--panel2);border:1px solid var(--line);color:var(--mute);border-radius:8px;
+  padding:6px 11px;font-family:inherit;font-size:12px;cursor:pointer;white-space:nowrap}
+.tg:hover{border-color:var(--signal);color:var(--paper)}
+.tg.on{background:var(--signal);color:var(--on-signal);border-color:var(--signal)}
+.mapwrap{position:relative;min-height:0}
+.legend{position:absolute;left:12px;bottom:12px;z-index:500;background:color-mix(in srgb, var(--panel) 94%, transparent);box-shadow:var(--shadow);
+  border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:12px;max-width:252px;
+  max-height:46%;overflow:auto;backdrop-filter:blur(3px)}
+.legend .h{font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:var(--mute);margin-bottom:7px}
+.legend .r{display:flex;align-items:center;gap:8px;padding:2px 0;cursor:pointer}
+.legend .r:hover{color:var(--signal)}
+.legend .r.dim{opacity:.45}
+.legend .ln{flex:none;width:20px;height:0;border-top:3px solid currentColor;border-radius:2px}
+.legend .plate{font-family:'IBM Plex Mono',monospace;font-size:12px}
+.legend .n{margin-left:auto;color:var(--mute);font-family:'IBM Plex Mono',monospace;font-size:11px}
+.legend .foot{margin-top:8px;padding-top:7px;border-top:1px solid var(--line);color:var(--mute);
+  font-size:11px;line-height:1.75}
+.legend .foot span{white-space:nowrap}
+.vchip{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:7px;vertical-align:middle}
+/* โหมดมืด: กลับสีเฉพาะชั้นพื้นแผนที่ ไม่แตะหมุด/เส้นทาง และไม่ต้องใช้ tile server ที่ต้องมีคีย์ */
+:root[data-theme="dark"] .leaflet-tile-pane{
+  filter:invert(1) hue-rotate(180deg) brightness(.94) contrast(.9) saturate(.75);
+}
+.leaflet-container{background:var(--map-bg)}
+.leaflet-popup-content-wrapper,.leaflet-popup-tip{background:var(--panel2);color:var(--paper);border-radius:10px}
+.leaflet-popup-content{margin:10px 12px;font-family:'IBM Plex Sans Thai',sans-serif;font-size:13px}
+.mk{display:grid;place-items:center;border-radius:50%;font-family:'IBM Plex Mono',monospace;
+  font-size:11px;font-weight:600;border:2px solid #0E1520}
+
+/* ---------- หมุดแบบไอคอน: รถบรรทุก / กล่องสินค้า / คลัง ---------- */
+.tk{position:absolute;left:6px;top:6px;width:30px;height:30px;border-radius:50%;
+  display:grid;place-items:center;border:2px solid #0E1520;box-shadow:0 2px 7px rgba(0,0,0,.5)}
+.tknum{position:absolute;right:-2px;bottom:-1px;min-width:17px;height:17px;padding:0 3px;
+  border-radius:9px;background:#0E1520;color:#E6EDF5;font-family:'IBM Plex Mono',monospace;
+  font-size:10px;font-weight:600;display:grid;place-items:center;border:1.5px solid}
+.pinum{position:absolute;right:-3px;top:-2px;min-width:17px;height:17px;padding:0 3px;
+  border-radius:9px;background:#0E1520;color:#E6EDF5;font-family:'IBM Plex Mono',monospace;
+  font-size:10px;font-weight:600;display:grid;place-items:center;border:1.5px solid}
+.pinwrap{position:relative;width:30px;height:38px;filter:drop-shadow(0 2px 4px rgba(0,0,0,.45))}
+/* เส้นทางที่กำลังวิ่ง — เส้นประไหลไปข้างหน้าแบบ Grab */
+.leaflet-overlay-pane path.flow{stroke-dasharray:14 11;animation:flow 1.1s linear infinite}
+@keyframes flow{to{stroke-dashoffset:-25}}
+@media (prefers-reduced-motion:reduce){.leaflet-overlay-pane path.flow{animation:none}}
+.chip{transform:translate(-50%,-50%);background:#12161C;color:#E6EDF5;border:1px solid var(--line);
+  border-radius:999px;padding:5px 11px;font-size:12px;font-weight:600;white-space:nowrap;
+  box-shadow:0 3px 10px rgba(0,0,0,.55);font-family:'IBM Plex Sans Thai',sans-serif}
+.chip .km{font-family:'IBM Plex Mono',monospace;color:#F5A524}
+</style>
+</head>
+<body>
+<div class="app">
+  <div class="top">
+    <h1>ศูนย์ควบคุมการขนส่ง</h1>
+    <span class="tag">TMS Live</span>
+    <div class="right">
+      <button class="tg on" id="tgStops" onclick="tg('stops')">จุดส่ง</button>
+      <button class="tg on" id="tgRoute" onclick="tg('route')">ทางที่ต้องวิ่ง</button>
+      <button class="tg on" id="tgPast" onclick="tg('past')">ทางที่วิ่งมาแล้ว</button>
+      <button class="tg" onclick="fitAll()">ภาพรวม</button>
+      <button class="thm" id="themeBtn" onclick="toggleTheme()"></button>
+      <span><span class="dot" id="rtDot"></span><span id="rtTxt">กำลังเชื่อมต่อ…</span></span>
+      <span class="mono" id="clock"></span>
+    </div>
+  </div>
+
+  <div class="main" id="main">
+    <div class="side">
+      <div class="sec">
+        <div class="lbl">สรุปวันนี้</div>
+        <div class="kpis">
+          <div class="kpi"><b id="kRun" style="color:var(--live)">0</b><span>กำลังวิ่ง</span></div>
+          <div class="kpi"><b id="kIdle">0</b><span>จอด</span></div>
+          <div class="kpi"><b id="kOff">0</b><span>ขาดสัญญาณ</span></div>
+          <div class="kpi"><b id="kDone">0</b><span>ส่งสำเร็จ</span></div>
+          <div class="kpi"><b id="kLeft">0</b><span>คงเหลือ</span></div>
+          <div class="kpi" id="kLateBox"><b id="kLate">0</b><span>เลยเวลา</span></div>
+        </div>
+        <div class="otbar" id="otBar" style="display:none">
+          <div class="otfill" id="otFill"></div><span id="otTxt"></span>
+        </div>
+      </div>
+      <div class="sec" id="apprSec" style="display:none">
+        <div class="lbl" style="color:var(--signal)">รออนุมัติจัดส่ง <span id="apprN"></span></div>
+        <div id="apprList"></div>
+      </div>
+      <div class="sec" style="padding-bottom:10px"><div class="lbl">รถทั้งหมด</div></div>
+      <div id="vehList"></div>
+    </div>
+
+    <div class="mapwrap">
+      <div id="map"></div>
+      <div class="legend" id="legend" style="display:none"></div>
+    </div>
+
+    <div class="side detail" id="detail">
+      <div class="dtl-hd">
+        <span class="x" onclick="closeDetail()">×</span>
+        <div class="disp" style="font-size:17px" id="dPlate">—</div>
+        <div style="font-size:12px;color:var(--mute)" id="dDrv"></div>
+        <div style="margin-top:10px;display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn" id="bFollow" onclick="toggleFollow()">ตามรถคันนี้</button>
+          <button class="btn" onclick="exportCsv()">ส่งออก CSV</button>
+        </div>
+      </div>
+      <div id="dStops"></div>
+    </div>
+  </div>
+</div>
+
+<script>
+/* ============================================================
+   ตั้งค่า — ใส่ค่าเดียวกับหน้าคนขับ
+   ============================================================ */
+const SUPABASE_URL = 'https://shtidoddhnbmacbikczo.supabase.co';
+const SUPABASE_ANON_KEY = 'sb_publishable_SSdmumG-xWgu0ZzuS8kY8A_NiPa_H-n';
+const HOME = [14.0700, 100.6100];   // จุดกึ่งกลางแผนที่เริ่มต้น
+const OFFLINE_SEC = 120;            // เกินกี่วินาทีถือว่าขาดสัญญาณ
+
+const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+const $ = id => document.getElementById(id);
+const today = () => new Date().toISOString().slice(0,10);
+const hhmm = d => new Date(d).toLocaleTimeString('th-TH',{hour:'2-digit',minute:'2-digit'});
+const ST = {pending:'รอส่ง',arrived:'ถึงแล้ว',delivered:'ส่งครบ',partial:'ส่งบางส่วน',returned:'ตีกลับ'};
+const esc = s => String(s??'').replace(/[<>&]/g,c=>({'<':'&lt;','>':'&gt;','&':'&amp;'}[c]));
+
+/* ---------- ธีมมืด/สว่าง ---------- */
+const ICON_SUN=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+ stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.6v2.2M12 19.2v2.2M4.2 12H2
+ M22 12h-2.2M5.6 5.6l1.6 1.6M16.8 16.8l1.6 1.6M18.4 5.6l-1.6 1.6M7.2 16.8l-1.6 1.6"/></svg>`;
+const ICON_MOON=`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+ stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.4A8.6 8.6 0 1 1 9.6 4a6.9 6.9 0 0 0 10.4 10.4Z"/></svg>`;
+const theme = () => document.documentElement.dataset.theme || 'dark';
+function setTheme(t, save){
+  document.documentElement.dataset.theme = t;
+  if(save) try{ localStorage.setItem('tms_theme', t); }catch(e){}
+  const b = document.getElementById('themeBtn');
+  if(b){ b.innerHTML = t==='light' ? ICON_MOON : ICON_SUN;
+    b.title = t==='light' ? 'สลับเป็นโหมดมืด' : 'สลับเป็นโหมดสว่าง'; }
+  if(typeof onThemeChange === 'function') onThemeChange(t);
+}
+window.toggleTheme = () => setTheme(theme()==='light' ? 'dark' : 'light', true);
+/* แผนที่: โหมดสว่างใช้ CARTO Voyager (ถนนชัด) · โหมดมืดใช้ CARTO Dark */
+/* พื้นแผนที่ใช้ OpenStreetMap มาตรฐาน — ไม่ต้องใช้ API key ไม่ต้องสมัครอะไร
+   โหมดมืดไม่ได้เปลี่ยนเป็นเซิร์ฟเวอร์อื่น แต่ใส่ฟิลเตอร์กลับสีเฉพาะชั้นพื้นแผนที่
+   (หมุดกับเส้นทางอยู่คนละชั้น จึงไม่โดนกลับสีไปด้วย) */
+const TILE_URL  = 'https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png';
+const TILE_ATTR = '© OpenStreetMap contributors';
+
+const map = L.map('map',{zoomControl:true}).setView(HOME, 12);
+L.tileLayer(TILE_URL,{maxZoom:19, attribution:TILE_ATTR}).addTo(map);
+setTheme(theme(), false);
+
+const V = {};              // vehicle_id -> {row, marker, trip, stops}
+let sel = null;
+
+/* ---------- ชั้นข้อมูลบนแผนที่ (มี 3 ชั้น เท่านั้น ไม่ซ้อนกัน) ----------
+   route = ทางที่ยังต้องวิ่ง (อนาคต)   past = ทางที่วิ่งมาแล้ว (อดีต)   stops = หมุดจุดส่ง   */
+const routeLayer = L.layerGroup().addTo(map);
+const pastLayer  = L.layerGroup().addTo(map);
+const allLayer   = L.layerGroup().addTo(map);
+const depotLayer = L.layerGroup().addTo(map);
+const RT_PAST  = '#8FA3BF';       // ทางที่วิ่งมาแล้ว — สีกลาง ไม่แย่งสายตา
+/* สีประจำรถ — ใช้กับเส้นทาง ขอบหมุดจุดส่ง และจุดหน้าทะเบียน แยกว่าเส้นไหน/จุดไหนของคันไหน */
+const VCOLORS = ['#F5A524','#2FD3B8','#7CA8FF','#E06CD9','#9AE66E','#FFD166','#66D9E8','#FF9A76'];
+const vcolor = {};
+const SHOW = {stops:true, route:true, past:true};
+const PAST = {};                  // vehicle_id -> [[lat,lng]...] เส้นที่วิ่งจริงของวันนี้
+let didFit = false;
+setInterval(()=>$('clock').textContent = new Date().toLocaleTimeString('th-TH'),1000);
+
+/* ============================================================
+   ไอคอนบนแผนที่ — รถบรรทุก / กล่องสินค้า / คลัง
+   วาดเป็น SVG ในหมุด ไม่ต้องโหลดไฟล์รูปจากที่ไหน
+   ============================================================ */
+/* เลือกสีเส้นในไอคอนให้ตัดกับสีพื้น — พื้นสว่างใช้หมึกเข้ม พื้นเข้มใช้หมึกอ่อน */
+const inkOn = hex => { const c=hex.replace('#','');
+  const r=parseInt(c.slice(0,2),16), g=parseInt(c.slice(2,4),16), b=parseInt(c.slice(4,6),16);
+  return (0.299*r + 0.587*g + 0.114*b) > 140 ? '#0E1520' : '#F2F6FB'; };
+const SVG_TRUCK = (c,bg) => `<svg width="19" height="14" viewBox="0 0 20 14" fill="${c}">
+  <rect x="0.5" y="1.5" width="10.5" height="7.5" rx="1.2"/>
+  <path d="M11.6 3.8h3.2l3 3.4V9h-6.2z"/>
+  <circle cx="4.6" cy="10.6" r="2.1"/><circle cx="14.6" cy="10.6" r="2.1"/>
+  <circle cx="4.6" cy="10.6" r=".8" fill="${bg}"/><circle cx="14.6" cy="10.6" r=".8" fill="${bg}"/></svg>`;
+const SVG_BOX = c => `<path d="M15 6 L22.4 9.7 L15 13.4 L7.6 9.7 Z" fill="${c}"/>
+  <path d="M7.6 10.9 L15 14.6 V21 L7.6 17.3 Z" fill="${c}" opacity=".8"/>
+  <path d="M22.4 10.9 L15 14.6 V21 L22.4 17.3 Z" fill="${c}" opacity=".55"/>`;
+const SVG_WAREHOUSE = `<path d="M17 7.6 L29 15.4 v9.4 H5 v-9.4 Z" fill="#12161C"/>
+  <rect x="11.6" y="16.4" width="10.8" height="8.4" rx="1" fill="#E6EDF5"/>
+  <path d="M12.3 18.6h9.4M12.3 20.8h9.4M12.3 23h9.4" stroke="#12161C" stroke-width="1.15"/>`;
+
+/* รถ: ลูกศรชี้ตามหัวรถหมุนด้วย CSS + ตัวรถอยู่กลาง + เลขรถมุมล่างขวา */
+function truckIcon(color, num, pulse, heading){
+  return L.divIcon({className:'', iconSize:[42,42], iconAnchor:[21,21],
+    html:`<div style="position:relative;width:42px;height:42px">
+      <div style="position:absolute;inset:0;display:grid;place-items:center;
+        transform:rotate(${heading||0}deg);transition:transform 1s linear">
+        <svg width="42" height="42" viewBox="0 0 42 42">
+          <path d="M21 1.5 L26.5 11 L15.5 11 Z" fill="${color}"/></svg></div>
+      <div class="tk" style="background:${color};${pulse?'box-shadow:0 0 0 7px '+color+'2E, 0 2px 7px rgba(0,0,0,.5);':''}">
+        ${SVG_TRUCK(inkOn(color), color)}</div>
+      <div class="tknum" style="border-color:${color}">${num}</div>
+    </div>`});
+}
+/* จุดส่ง: หมุดหยดน้ำ สีตามสถานะ ข้างในเป็นกล่องสินค้า เลขลำดับอยู่มุมบนขวา */
+function boxIcon(fill, ring, label, op){
+  return L.divIcon({className:'', iconSize:[30,38], iconAnchor:[15,37],
+    html:`<div class="pinwrap" style="opacity:${op??1}">
+      <svg width="30" height="38" viewBox="0 0 30 38">
+        <path d="M15 36.5C15 36.5 28 22.6 28 14A13 13 0 1 0 2 14C2 22.6 15 36.5 15 36.5Z"
+          fill="${fill}" stroke="${ring||'#0E1520'}" stroke-width="2.2"/>
+        ${SVG_BOX(inkOn(fill))}</svg>
+      <div class="pinum" style="border-color:${ring||fill}">${label}</div>
+    </div>`});
+}
+/* คลัง / จุดรับสินค้า */
+function depotIcon(){
+  return L.divIcon({className:'', iconSize:[34,42], iconAnchor:[17,41],
+    html:`<div class="pinwrap" style="width:34px;height:42px">
+      <svg width="34" height="42" viewBox="0 0 34 42">
+        <path d="M17 40.5C17 40.5 31.5 25 31.5 15.5A14.5 14.5 0 1 0 2.5 15.5C2.5 25 17 40.5 17 40.5Z"
+          fill="#E6EDF5" stroke="#0E1520" stroke-width="2.2"/>
+        ${SVG_WAREHOUSE}</svg></div>`});
+}
+
+/* ============================================================
+   เส้นทางตามถนนจริง (แบบ Grab) — ORS → OSRM → เส้นตรง
+   ขอครั้งเดียวต่อชุดพิกัด แล้วเก็บแคชไว้ ไม่ยิงซ้ำทุกครั้งที่รีเฟรช
+   ============================================================ */
+const ORS_KEY = 'eyJvcmciOiI1YjNjZTM1OTc4NTExMTAwMDFjZjYyNDgiLCJpZCI6ImFlMTdkODVlNDIxMjRkZmE4ZjE2MTgxOWNiNTQ2YmNiIiwiaCI6Im11cm11cjY0In0=';
+let orsDown = 0;
+const RCACHE = new Map(), RPEND = new Set();
+const rkey = pts => pts.map(p=>p[0].toFixed(5)+','+p[1].toFixed(5)).join(';');
+
+async function orsRoute(pts){
+  if(!ORS_KEY || Date.now()-orsDown < 600000) return null;
+  try{
+    const r = await fetch('https://api.openrouteservice.org/v2/directions/driving-car/geojson',{
+      method:'POST', headers:{'Authorization':ORS_KEY,'Content-Type':'application/json'},
+      body: JSON.stringify({coordinates: pts.map(p=>[p[1],p[0]])})});
+    if(!r.ok){ if(r.status===403||r.status===429) orsDown=Date.now(); return null; }
+    const j = await r.json(), f = j.features?.[0]; if(!f) return null;
+    const s = f.properties?.summary || {};
+    return {ll:f.geometry.coordinates.map(c=>[c[1],c[0]]), dist:s.distance, dur:s.duration, src:'ORS'};
+  }catch(e){ return null; }
+}
+async function osrmRoute(pts){
+  try{
+    const u = `https://router.project-osrm.org/route/v1/driving/${pts.map(p=>p[1]+','+p[0]).join(';')}`
+      + `?overview=full&geometries=geojson`;
+    const r = await fetch(u); if(!r.ok) return null;
+    const j = await r.json(), rt = j.routes?.[0]; if(!rt) return null;
+    return {ll:rt.geometry.coordinates.map(c=>[c[1],c[0]]), dist:rt.distance, dur:rt.duration, src:'OSRM'};
+  }catch(e){ return null; }
+}
+/* คืนเส้นถนนถ้ามีในแคช · ถ้ายังไม่มีก็คืนเส้นตรงไปก่อน แล้ววาดใหม่เมื่อเส้นถนนมาถึง */
+function road(pts){
+  if(pts.length<2) return {ll:pts, dist:null, dur:null, src:'LINE'};
+  const k = rkey(pts);
+  if(RCACHE.has(k)) return RCACHE.get(k);
+  if(!RPEND.has(k)){
+    RPEND.add(k);
+    (async()=>{
+      const r = await orsRoute(pts) || await osrmRoute(pts) || {ll:pts, dist:null, dur:null, src:'LINE'};
+      if(RCACHE.size > 250) RCACHE.clear();
+      RCACHE.set(k,r); RPEND.delete(k); drawNetwork();
+    })();
+  }
+  return {ll:pts, dist:null, dur:null, src:'WAIT'};
+}
+function vstate(p){
+  if(!p || p.age_sec > OFFLINE_SEC) return 'off';
+  return (p.speed_kmh||0) > 3 ? 'moving' : 'idle';
+}
+function bearing(a,b){
+  const toR=x=>x*Math.PI/180, toD=x=>x*180/Math.PI;
+  const dL=toR(b[1]-a[1]), y=Math.sin(dL)*Math.cos(toR(b[0]));
+  const x=Math.cos(toR(a[0]))*Math.sin(toR(b[0]))-Math.sin(toR(a[0]))*Math.cos(toR(b[0]))*Math.cos(dL);
+  return (toD(Math.atan2(y,x))+360)%360;
+}
+
+/* ---------- เครื่องยนต์ animation: หมุดไหลจากจุดเดิมไปจุดใหม่ ---------- */
+const ANIM_MS = 3000;                 // เวลาไหลต่อ 1 ping
+function animateMarker(v, to){
+  if(!v.marker){ return; }
+  const from = v.marker.getLatLng();
+  if(v._raf) cancelAnimationFrame(v._raf);
+  const t0 = performance.now();
+  const step = now => {
+    const k = Math.min(1,(now-t0)/ANIM_MS);
+    const e = k<0.5 ? 2*k*k : 1-Math.pow(-2*k+2,2)/2;   // easeInOut
+    const lat = from.lat+(to[0]-from.lat)*e, lng = from.lng+(to[1]-from.lng)*e;
+    v.marker.setLatLng([lat,lng]);
+    if(FOLLOW && sel===v.row.id) map.panTo([lat,lng],{animate:false});
+    if(k<1) v._raf = requestAnimationFrame(step);
+  };
+  v._raf = requestAnimationFrame(step);
+}
+
+/* ---------- เส้นที่รถวิ่งมาแล้วจริง ๆ ของวันนี้ ----------
+   โหลดจาก gps_logs ครั้งเดียวตอนเลือกคัน แล้วต่อจุดใหม่เข้าท้ายเรื่อย ๆ จาก realtime
+   (เดิมแยกเป็น "หางเส้นทางสด" กับปุ่ม "เส้นทางวันนี้" ซึ่งเป็นข้อมูลชุดเดียวกัน จึงยุบเหลือชุดเดียว) */
+async function loadPast(id){
+  if(!id || PAST[id]) return;
+  const {data} = await sb.from('gps_logs').select('lat,lng,recorded_at')
+    .eq('vehicle_id',id).gte('recorded_at', today()+'T00:00:00')
+    .order('recorded_at').limit(5000);
+  PAST[id] = (data||[]).map(d=>[d.lat,d.lng]);
+  drawNetwork();
+}
+const COLOR = {moving:'#2FD3B8', idle:'#F5A524', off:'#4A5F7D'};
+const STXT  = {moving:'กำลังวิ่ง', idle:'จอด', off:'ขาดสัญญาณ'};
+
+/* ---------- โหลดข้อมูลหลัก ---------- */
+async function loadAll(){
+  const {data:veh, error} = await sb.from('vehicles').select('*').eq('active',true).order('id');
+  if(error){ $('rtTxt').textContent='เชื่อมต่อไม่ได้ — ตรวจ URL และ key'; $('rtDot').style.background='var(--alert)'; return; }
+  const {data:trips} = await sb.from('trips').select('*, stops(*, items(*))')
+    .eq('trip_date',today()).order('id');
+  const {data:pos} = await sb.from('v_live_positions').select('*');
+
+  veh.forEach(v=>{
+    const trip = (trips||[]).filter(t=>t.vehicle_id===v.id)
+      .sort((a,b)=> (a.status==='running'?-1:1))[0] || null;
+    if(trip) trip.stops.sort((a,b)=>a.seq-b.seq);
+    V[v.id] = {...(V[v.id]||{}), row:v, trip, pos:(pos||[]).find(p=>p.vehicle_id===v.id)||null};
+  });
+  Object.keys(V).forEach((id,i)=>{ if(!vcolor[id]) vcolor[id] = VCOLORS[i % VCOLORS.length]; });
+  renderVeh(); renderMarkers(); renderKpi(); drawNetwork();
+  if(sel) renderDetail();
+  $('rtTxt').textContent='รับข้อมูลสด'; $('rtDot').style.background='var(--live)';
+}
+
+/* ---------- คิวรออนุมัติจัดส่ง ---------- */
+let APPR = [], apprMk = L.layerGroup().addTo(map);
+const ADMIN = localStorage.getItem('tms_admin') || '';
+async function loadAppr(){
+  const {data} = await sb.from('v_pending_approvals').select('*');
+  APPR = data||[]; renderAppr();
+}
+function renderAppr(){
+  $('apprSec').style.display = APPR.length ? 'block':'none';
+  $('apprN').textContent = APPR.length ? `(${APPR.length})` : '';
+  $('apprN').className = APPR.length ? 'blink':'';
+  $('apprList').innerHTML = APPR.map(a=>`
+    <div class="appr">
+      <div class="who">${esc(a.customer)}</div>
+      <div class="sub">${esc(a.plate)} · ${esc(a.driver_name||'')} · จุดที่ ${a.seq} · ${a.item_count} รายการ</div>
+      <div class="far">ห่างจุดส่ง ${Math.round(a.approval_distance_m||0)} ม. (กำหนด ${a.geofence_m} ม.)</div>
+      <div class="rsn">${esc(a.approval_reason||'ไม่ได้ระบุเหตุผล')}</div>
+      <div class="acts">
+        <button class="b-loc" onclick="showAppr(${a.stop_id})" title="ดูตำแหน่งบนแผนที่">◎</button>
+        <button class="b-ok" onclick="decide(${a.stop_id},'approved')">อนุมัติ</button>
+        <button class="b-no" onclick="decide(${a.stop_id},'rejected')">ไม่อนุมัติ</button>
+      </div></div>`).join('');
+}
+window.showAppr = id => {
+  const a = APPR.find(x=>x.stop_id===id); if(!a) return;
+  apprMk.clearLayers();
+  const pts=[];
+  if(a.approval_lat!=null){ pts.push([a.approval_lat,a.approval_lng]);
+    L.marker([a.approval_lat,a.approval_lng],{icon:L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,13],
+      html:`<div class="mk" style="width:26px;height:26px;background:#F5A524;color:var(--on-signal)">รถ</div>`})})
+      .bindPopup(`<b>ตำแหน่งคนขับ</b><br>${esc(a.plate)}`).addTo(apprMk); }
+  if(a.dest_lat!=null){ pts.push([a.dest_lat,a.dest_lng]);
+    L.circle([a.dest_lat,a.dest_lng],{radius:a.geofence_m,color:'#2FD3B8',weight:1.5,
+      fillOpacity:.09}).addTo(apprMk);
+    L.marker([a.dest_lat,a.dest_lng],{icon:L.divIcon({className:'',iconSize:[26,26],iconAnchor:[13,13],
+      html:`<div class="mk" style="width:26px;height:26px;background:#2FD3B8;color:var(--on-live)">${a.seq}</div>`})})
+      .bindPopup(`<b>${esc(a.customer)}</b><br>จุดส่งที่กำหนด`).addTo(apprMk); }
+  if(pts.length===2) L.polyline(pts,{color:'#E5544B',weight:2,dashArray:'6 5'}).addTo(apprMk);
+  if(pts.length) map.fitBounds(L.latLngBounds(pts).pad(0.6));
+};
+window.decide = async (id, verdict) => {
+  const a = APPR.find(x=>x.stop_id===id);
+  let note = null;
+  if(verdict==='rejected'){
+    note = prompt(`ไม่อนุมัติ "${a?.customer||''}"\nเหตุผล (คนขับจะเห็นข้อความนี้):`, '');
+    if(note===null) return;
+  }
+  const {error} = await sb.from('stops').update({approval_status:verdict,
+    approval_by: ADMIN || 'ศูนย์ควบคุม', approval_at:new Date().toISOString(),
+    approval_note: note||null}).eq('id',id);
+  if(error) return alert('บันทึกไม่สำเร็จ: '+error.message);
+  apprMk.clearLayers(); loadAppr();
+};
+
+/* ---------- ตรงเวลา / เลยเวลา ----------
+   eta = เวลาที่ควรถึงตามแผน (มาจาก planner) · เทียบกับเวลาที่กดยืนยันจริง ถ้ายังไม่ส่งก็เทียบกับตอนนี้ */
+const LATE_MIN = 15;                       // เกินกี่นาทีถึงนับว่าสาย
+function etaDate(s){
+  if(!s?.eta) return null;
+  const [h,m] = String(s.eta).split(':');
+  const d = new Date(); d.setHours(+h, +m, 0, 0); return d;
+}
+function lateMin(s){
+  const e = etaDate(s); if(!e) return null;
+  const ref = s.done_at ? new Date(s.done_at) : new Date();
+  return Math.round((ref - e)/60000);
+}
+const lateTxt = m => m>=60 ? `${(m/60).toFixed(1)} ชม.` : `${m} น.`;
+function lateChip(s){
+  const m = lateMin(s); if(m==null) return '';
+  if(m > LATE_MIN)  return `<span class="chipx late">สาย ${lateTxt(m)}</span>`;
+  if(isDone(s))     return `<span class="chipx ${m < -5 ? 'early':'ontime'}">${
+                              m < -5 ? 'เร็วกว่าแผน '+lateTxt(-m) : 'ตรงเวลา'}</span>`;
+  return '';
+}
+
+function renderKpi(){
+  const vs = Object.values(V), st = vs.map(v=>vstate(v.pos));
+  $('kRun').textContent  = st.filter(x=>x==='moving').length;
+  $('kIdle').textContent = st.filter(x=>x==='idle').length;
+  $('kOff').textContent  = st.filter(x=>x==='off').length;
+  let done=0, left=0, late=0, onTime=0, rated=0;
+  vs.forEach(v=>(v.trip?.stops||[]).forEach(s=>{
+    const m = lateMin(s);
+    if(isDone(s)){ done++; if(m!=null){ rated++; if(m<=LATE_MIN) onTime++; else late++; } }
+    else { left++; if(m!=null && m>LATE_MIN) late++; }
+  }));
+  $('kDone').textContent=done; $('kLeft').textContent=left; $('kLate').textContent=late;
+  $('kLateBox').classList.toggle('bad', late>0);
+  /* แถบ on-time — ตัวเลขที่ผู้บริหารถามทุกวัน */
+  if(rated){
+    const pct = Math.round(onTime/rated*100);
+    $('otBar').style.display='flex';
+    $('otFill').style.width = pct+'%';
+    $('otTxt').textContent = `ส่งตรงเวลา ${pct}%  (${onTime}/${rated} จุด)`;
+  } else $('otBar').style.display='none';
+}
+
+function railHtml(stops){
+  if(!stops||!stops.length) return '<div style="font-size:11px;color:var(--dim);margin-top:8px">ไม่มีเที่ยววันนี้</div>';
+  const k = s => ({delivered:'done',partial:'partial',returned:'ret',arrived:'arrived'})[s.status]||'';
+  return '<div class="rail">' + stops.map((s,i)=>
+    `<div class="bead ${k(s)}" title="${s.customer}">${k(s)==='done'?'✓':s.seq}</div>` +
+    (i<stops.length-1 ? `<div class="seg ${k(s)&&k(s)!=='arrived'?'done':''}"></div>`:'')
+  ).join('') + '</div>';
+}
+
+const VORDER = {moving:0, idle:1, off:2};
+function vehLate(v){ const nx = nextStopOf(v); const m = nx ? lateMin(nx) : null; return m==null?-999:m; }
+function renderVeh(){
+  /* เรียง: กำลังวิ่ง → จอด → ขาดสัญญาณ · ในกลุ่มเดียวกันเอาคันที่สายที่สุดขึ้นก่อน */
+  const list = Object.values(V).sort((a,b)=>
+    (VORDER[vstate(a.pos)] - VORDER[vstate(b.pos)]) || (vehLate(b) - vehLate(a))
+    || String(a.row.id).localeCompare(String(b.row.id)));
+  $('vehList').innerHTML = list.map(v=>{
+    const st = vstate(v.pos), stops = v.trip?.stops||[];
+    const done = stops.filter(s=>['delivered','partial','returned'].includes(s.status)).length;
+    return `<div class="veh ${sel===v.row.id?'sel':''}" onclick="pick('${v.row.id}')">
+      <div class="hd">
+        <div><div class="plate"><span class="vchip" style="background:${vcolor[v.row.id]||'#4A5F7D'}"></span>${v.row.plate}</div>
+        <div class="drv">${v.row.driver_name||'—'}</div></div>
+        <div class="st ${st}">${STXT[st]}</div>
+      </div>
+      ${railHtml(stops)}
+      <div class="meta">
+        <span>${stops.length?`ส่งแล้ว ${done}/${stops.length}`:'—'}</span>
+        ${(()=>{ const nx=nextStopOf(v), m=nx?lateMin(nx):null;
+          return (m!=null && m>LATE_MIN) ? `<span class="chipx late">สาย ${lateTxt(m)}</span>`
+               : (nx && m!=null ? `<span class="chipx ontime">ตามแผน</span>` : ''); })()}
+        <span class="mono">${v.trip?.plan_distance_m? 'แผน '+(v.trip.plan_distance_m/1000).toFixed(1)+' กม.' : (v.pos? Math.round(v.pos.speed_kmh||0)+' กม./ชม.':'—')}</span>
+        <span class="mono">${v.pos? 'อัปเดต '+hhmm(v.pos.recorded_at):'ไม่มีสัญญาณ'}</span>
+      </div></div>`;
+  }).join('');
+}
+
+function renderMarkers(){
+  Object.values(V).forEach(v=>{
+    if(!v.pos) return;
+    const st = vstate(v.pos), ll = [v.pos.lat, v.pos.lng];
+    const ic = truckIcon(COLOR[st], v.row.id.replace(/^V/,''), st==='moving', v.heading||0);
+    if(v.marker){ v.marker.setIcon(ic); animateMarker(v, ll); }
+    else{
+      v.marker = L.marker(ll,{icon:ic}).addTo(map).on('click',()=>pick(v.row.id));
+      v.marker.bindPopup('');
+    }
+    v.marker.setPopupContent(
+      `<b>${v.row.plate}</b><br>${v.row.driver_name||''}<br>
+       ${STXT[st]} · ${Math.round(v.pos.speed_kmh||0)} กม./ชม.<br>
+       <span style="color:#8A9CB4">อัปเดต ${hhmm(v.pos.recorded_at)}</span>`);
+  });
+}
+
+/* ============================================================
+   เส้นทางแผน + จุดส่งทั้งหมดบนแผนที่
+   เส้นประ = ลำดับส่งตามแผน (คลัง → จุด 1 → 2 → … [→ กลับคลัง])
+   หมุดกลม = จุดส่ง สีในหมุด = สถานะ · ขอบหมุด = สีประจำรถ
+   เลือกรถคันใดคันหนึ่ง = คันอื่นจางลง แต่ยังเห็นภาพรวม
+   ============================================================ */
+const SCOLOR = {delivered:'#2FD3B8', partial:'#F5A524', returned:'#E5544B',
+                arrived:'#F5A524', pending:'#56708F'};
+const kmTxt = m => m!=null ? (m/1000).toFixed(1)+' กม.' : null;
+
+function drawNetwork(){
+  routeLayer.clearLayers(); pastLayer.clearLayers();
+  allLayer.clearLayers(); depotLayer.clearLayers();
+  const depots = new Map(), bounds = [];
+
+  Object.values(V).forEach(v=>{
+    const t = v.trip; if(!t) return;
+    const col = vcolor[v.row.id] || '#8A9CB4';
+    const focus = !sel || sel===v.row.id;
+    const op = focus ? 1 : .3;
+    const stops = (t.stops||[]).filter(s=>s.dest_lat!=null && s.dest_lng!=null);
+    if(t.origin_lat!=null && t.origin_lng!=null)
+      depots.set(t.origin_lat.toFixed(5)+','+t.origin_lng.toFixed(5),
+        {lat:t.origin_lat, lng:t.origin_lng, name:t.origin_name});
+
+    if(SHOW.route) drawRoute(v, focus, op, bounds);
+
+    if(SHOW.stops) stops.forEach(s=>{
+      const c = SCOLOR[s.status] || SCOLOR.pending;
+      const done = isDone(s);
+      bounds.push([s.dest_lat, s.dest_lng]);
+      L.marker([s.dest_lat,s.dest_lng],{zIndexOffset: focus?200:0,
+        icon: boxIcon(c, col, done?'✓':s.seq, op)})
+        .addTo(allLayer)
+        .bindPopup(`<b>${esc(s.customer)}</b><br>
+          ${esc(v.row.plate)} · จุดที่ ${s.seq} · ${ST[s.status]||s.status}
+          ${s.address?'<br><span style="color:#8A9CB4">'+esc(s.address)+'</span>':''}
+          ${s.eta?`<br>ถึงตามแผน ${String(s.eta).slice(0,5)} น.`:''}
+          ${s.leg_distance_m?` · ${kmTxt(s.leg_distance_m)} จากจุดก่อนหน้า`:''}
+          ${s.done_at?`<br><span style="color:#2FD3B8">ยืนยัน ${hhmm(s.done_at)}</span>`:''}
+          <br>${(s.items||[]).length} รายการ`)
+        .on('click',()=>{ if(sel!==v.row.id) pick(v.row.id); });
+
+      /* จุดที่คนขับกดยืนยันห่างจากจุดส่งเกิน 100 ม. — โยงเส้นให้เห็น (เฉพาะคันที่เลือก) */
+      if(focus && sel && s.done_lat!=null && distM(s.done_lat,s.done_lng,s.dest_lat,s.dest_lng)>100){
+        L.polyline([[s.dest_lat,s.dest_lng],[s.done_lat,s.done_lng]],
+          {color:'#E5544B',weight:1.5,dashArray:'4 4',opacity:.9}).addTo(allLayer);
+        L.circleMarker([s.done_lat,s.done_lng],{radius:5,color:'#E5544B',fillColor:'#E5544B',
+          fillOpacity:.9,weight:1}).addTo(allLayer)
+          .bindPopup(`<b>จุดที่กดยืนยันจริง</b><br>${esc(s.customer)}<br>
+            ห่างจากจุดส่ง ${Math.round(distM(s.done_lat,s.done_lng,s.dest_lat,s.dest_lng))} ม.`);
+      }
+    });
+  });
+
+  /* เส้นที่วิ่งมาแล้ว — เฉพาะคันที่เลือก (ดึงทั้งวันมาเส้นเดียว) */
+  if(SHOW.past && sel && (PAST[sel]||[]).length>1){
+    L.polyline(PAST[sel],{color:'var(--map-bg)',weight:7,opacity:.3,
+      lineCap:'round',lineJoin:'round'}).addTo(pastLayer);
+    L.polyline(PAST[sel],{color:RT_PAST,weight:3.5,opacity:.85,
+      lineCap:'round',lineJoin:'round'}).addTo(pastLayer)
+      .bindPopup(`<b>${esc(V[sel].row.plate)}</b><br>เส้นที่วิ่งมาแล้ววันนี้`);
+    PAST[sel].forEach(p=>bounds.push(p));
+  }
+
+  depots.forEach(d=>{
+    bounds.push([d.lat,d.lng]);
+    L.marker([d.lat,d.lng],{icon:depotIcon(), zIndexOffset:150})
+      .addTo(depotLayer).bindPopup(`<b>จุดรับสินค้า</b><br>${esc(d.name||'—')}`);
+  });
+
+  NET_BOUNDS = bounds;
+  renderLegend();
+  if(!didFit && bounds.length){ didFit = true; fitAll(); }
+}
+let NET_BOUNDS = [];
+
+/* ============================================================
+   เส้นทางที่ "ยังต้องวิ่ง" — เส้นเดียวจบ ไม่มีเส้นแผนซ้อนกับเส้นกำลังวิ่ง
+     ยังไม่ออกรถ / ไม่มีสัญญาณ → เริ่มจากคลัง ผ่านจุดที่ยังไม่ส่งตามลำดับ
+     กำลังวิ่ง                → เริ่มจากตำแหน่งรถจริงตอนนี้ (จุดที่ส่งแล้วตัดออก)
+   ช่วงแรก (ไปจุดถัดไป) วาดหนา+ไหล พร้อมป้ายเวลา/ระยะ · ช่วงที่เหลือบางลง
+   ปัดพิกัดรถเป็นทศนิยม 3 ตำแหน่ง (~110 ม.) ก่อนใช้เป็นคีย์แคช จะได้ไม่ยิงขอทุก ping
+   ============================================================ */
+const snap3 = x => +x.toFixed(3);
+const isDone = s => ['delivered','partial','returned'].includes(s.status);
+function nextStopOf(v){
+  return (v.trip?.stops||[]).find(s=>!isDone(s) && s.dest_lat!=null && s.dest_lng!=null);
+}
+function drawRoute(v, focus, op, bounds){
+  const t = v.trip;
+  const pend = (t.stops||[]).filter(s=>!isDone(s) && s.dest_lat!=null && s.dest_lng!=null);
+  const live = v.pos && vstate(v.pos)!=='off' && t.status==='running';
+  const head = live ? [snap3(v.pos.lat), snap3(v.pos.lng)]
+             : (t.origin_lat!=null ? [t.origin_lat, t.origin_lng] : null);
+  if(!head) return;
+  const rest = pend.map(s=>[s.dest_lat, s.dest_lng]);
+  if(t.plan_return && t.origin_lat!=null) rest.push([t.origin_lat, t.origin_lng]);
+  if(!rest.length) return;
+  rest.forEach(p=>bounds.push(p)); bounds.push(head);
+
+  /* ช่วงแรก: หัวเส้น → จุดถัดไป (เส้นเด่น) */
+  const leg1 = road([head, rest[0]]);
+  const ll1  = live ? [[v.pos.lat, v.pos.lng], ...leg1.ll] : leg1.ll;
+  const col = vcolor[v.row.id] || '#F5A524';
+  const lines = [paintRoute(ll1, focus?6:3, focus?.97:op*.75, focus && live, col)];  // ไหล = กำลังวิ่งจริงเท่านั้น
+  /* ช่วงที่เหลือ: จุดถัดไป → จุดอื่น ๆ จนจบ (เส้นบางกว่า ไม่ไหล) */
+  if(rest.length>1){
+    const rt2 = road(rest);
+    lines.push(paintRoute(rt2.ll, focus?3.5:2, (focus?.75:op*.5), false, col));
+  }
+  /* ป้ายบอกเวลา/ระยะช่วงที่กำลังวิ่ง — เฉพาะคันที่เลือก */
+  if(sel===v.row.id && live){
+    const nx = pend[0];
+    const mid = ll1[Math.floor(ll1.length/2)];
+    const txt = leg1.dur!=null
+      ? `${esc(nx?nx.customer:'')} · ${Math.max(1,Math.round(leg1.dur/60))} นาที · <span class="km">${
+          leg1.dist>=1000 ? (leg1.dist/1000).toFixed(1)+' กม.' : Math.round(leg1.dist)+' ม.'}</span>`
+      : 'กำลังหาเส้นทาง…';
+    L.marker(mid,{interactive:false, zIndexOffset:400,
+      icon:L.divIcon({className:'', iconSize:[0,0], html:`<div class="chip">${txt}</div>`})})
+      .addTo(routeLayer);
+  }
+  const pop = `<b>${esc(v.row.plate)}</b><br>เที่ยว #${t.id} · เหลือ ${pend.length} จาก ${(t.stops||[]).length} จุด`
+    + (t.plan_distance_m?`<br>ทั้งเที่ยวตามแผน ${kmTxt(t.plan_distance_m)} · ${Math.round(t.plan_duration_s/60)} นาที`:'')
+    + (t.route_mode==='auto'?'<br><span style="color:#2FD3B8">จัดลำดับอัตโนมัติ</span>':'');
+  lines.forEach(l=>l.bindPopup(pop).on('click',()=>{ if(sel!==v.row.id) pick(v.row.id); }));
+}
+/* เงาใต้เส้น + เส้นสีเขียวข้างบน (อ่านง่ายทั้งบนถนนสีอ่อนและสวนสีเขียว) */
+function paintRoute(ll, w, opacity, flowing, col){
+  L.polyline(ll,{color:'var(--map-bg)', weight:w+5, opacity:opacity*.4,
+    lineCap:'round', lineJoin:'round'}).addTo(routeLayer);
+  return L.polyline(ll,{color:col, weight:w, opacity:opacity,
+    lineCap:'round', lineJoin:'round', className: flowing?'flow':''}).addTo(routeLayer);
+}
+function distM(la1,ln1,la2,ln2){
+  const r=Math.PI/180, dLa=(la2-la1)*r, dLn=(ln2-ln1)*r;
+  const x=Math.sin(dLa/2)**2+Math.cos(la1*r)*Math.cos(la2*r)*Math.sin(dLn/2)**2;
+  return 6371000*2*Math.atan2(Math.sqrt(x),Math.sqrt(1-x));
+}
+window.fitAll = () => {
+  const pts = NET_BOUNDS.concat(Object.values(V).filter(v=>v.pos).map(v=>[v.pos.lat,v.pos.lng]));
+  if(!pts.length) return;
+  setFollow(false);
+  map.fitBounds(L.latLngBounds(pts).pad(.18));
+};
+window.tg = k => { SHOW[k] = !SHOW[k];
+  $({stops:'tgStops', route:'tgRoute', past:'tgPast'}[k]).classList.toggle('on', SHOW[k]);
+  drawNetwork(); };
+
+function renderLegend(){
+  const rows = Object.values(V).filter(v=>v.trip && (v.trip.stops||[]).length);
+  if(!rows.length){ $('legend').style.display='none'; return; }
+  $('legend').style.display='block';
+  $('legend').innerHTML = `<div class="h">เส้นทางวันนี้</div>` + rows.map(v=>{
+    const st=(v.trip.stops||[]), done=st.filter(s=>['delivered','partial','returned'].includes(s.status)).length;
+    return `<div class="r ${sel&&sel!==v.row.id?'dim':''}" style="color:${vcolor[v.row.id]}"
+        onclick="pick('${v.row.id}')">
+      <span class="ln"></span><span class="plate" style="color:var(--paper)">${esc(v.row.plate)}</span>
+      <span class="n">${done}/${st.length}</span></div>`;
+  }).join('') + `<div class="foot">
+    เส้นสีประจำรถ = ทางที่ยังต้องวิ่ง (ช่วงไปจุดถัดไปหนาและไหล)<br>
+    <span style="color:${RT_PAST}">━</span> เส้นเทา = ทางที่วิ่งมาแล้ววันนี้<br>
+    หมุดกล่อง: <span style="color:#56708F">รอส่ง</span> ·
+    <span style="color:#F5A524">บางส่วน</span> ·
+    <span style="color:#2FD3B8">ส่งครบ</span> ·
+    <span style="color:#E5544B">ตีกลับ</span></div>`;
+}
+
+/* ---------- แผงรายละเอียด ---------- */
+let FOLLOW = false;
+window.pick = (id) => {
+  sel = id; $('main').classList.add('detail'); $('detail').classList.add('on');
+  renderVeh(); renderDetail();
+  const v = V[id];
+  drawNetwork(); loadPast(id);
+  /* ซูมให้เห็นทั้งเส้นทางของคันนี้ ไม่ใช่แค่ตำแหน่งรถ */
+  const pts = (v.trip?.stops||[]).filter(s=>s.dest_lat!=null).map(s=>[s.dest_lat,s.dest_lng]);
+  if(v.trip?.origin_lat!=null) pts.push([v.trip.origin_lat, v.trip.origin_lng]);
+  if(v.pos) pts.push([v.pos.lat, v.pos.lng]);
+  if(pts.length>1) map.fitBounds(L.latLngBounds(pts).pad(.22));
+  else if(v.pos) map.setView([v.pos.lat,v.pos.lng], 15);
+};
+window.closeDetail = () => { setFollow(false);
+  sel=null; $('main').classList.remove('detail');
+  $('detail').classList.remove('on'); renderVeh(); drawNetwork(); };
+function setFollow(on){ FOLLOW = on;
+  const b = $('bFollow'); if(!b) return;
+  b.classList.toggle('on', on); b.textContent = on ? 'กำลังตามรถ · กดเพื่อหยุด' : 'ตามรถคันนี้';
+  if(on && V[sel]?.pos) map.setView([V[sel].pos.lat, V[sel].pos.lng], 16);
+}
+window.toggleFollow = () => setFollow(!FOLLOW);
+/* ผู้ใช้ลากแผนที่เอง = ต้องการดูที่อื่น หยุดตามให้อัตโนมัติ */
+map.on('dragstart', ()=> FOLLOW && setFollow(false));
+
+function renderDetail(){
+  const v = V[sel]; if(!v) return;
+  $('dPlate').textContent = v.row.plate;
+  $('dDrv').textContent = (v.row.driver_name||'—') + (v.trip? ` · เที่ยว #${v.trip.id}`:'');
+  const stops = v.trip?.stops||[];
+  $('dStops').innerHTML = stops.length ? stops.map(s=>`
+    <div class="stop ${s.status}">
+      <div style="display:flex;justify-content:space-between;gap:8px">
+        <div><div class="cust">${s.seq}. ${s.customer}</div>
+        <div class="sub">${s.address||''}</div></div>
+        <div class="sub s ${s.status}" style="white-space:nowrap">${ST[s.status]}</div>
+      </div>
+      ${s.eta?`<div class="sub mono" style="margin-top:5px;display:flex;gap:7px;align-items:center;flex-wrap:wrap">
+        <span>ตามแผน ${String(s.eta).slice(0,5)} น.${s.leg_distance_m?' · '+(s.leg_distance_m/1000).toFixed(1)+' กม.':''}</span>
+        ${lateChip(s)}</div>`:''}
+      ${s.done_at?`<div class="sub mono" style="margin-top:4px">ยืนยัน ${hhmm(s.done_at)}${s.receiver_name?' · ผู้รับ '+s.receiver_name:''}</div>`:''}
+      <div style="margin-top:8px">${(s.items||[]).map(i=>`
+        <div class="itm"><span>${i.item_name}</span>
+        <span class="s ${i.status||'pending'}">${i.qty_delivered ?? '–'}/${i.qty_plan} ${i.unit||''}</span></div>`).join('')}</div>
+      ${s.note?`<div class="sub" style="margin-top:6px">หมายเหตุ: ${s.note}</div>`:''}
+    </div>`).join('') : '<div class="empty">รถคันนี้ยังไม่มีเที่ยววิ่งของวันนี้</div>';
+}
+
+/* ---------- ส่งออก CSV ---------- */
+window.exportCsv = () => {
+  const v = V[sel]; const rows = [['ทะเบียน','คนขับ','เที่ยว','ลำดับ','ลูกค้า','สถานะจุดส่ง','เวลายืนยัน','ผู้รับ','สินค้า','แผน','ส่งจริง','หน่วย','สถานะสินค้า']];
+  (v.trip?.stops||[]).forEach(s=>(s.items||[]).forEach(i=>rows.push([
+    v.row.plate, v.row.driver_name||'', v.trip.id, s.seq, s.customer, ST[s.status],
+    s.done_at?hhmm(s.done_at):'', s.receiver_name||'', i.item_name, i.qty_plan,
+    i.qty_delivered ?? '', i.unit||'', ST[i.status]||i.status])));
+  const csv = '\uFEFF' + rows.map(r=>r.map(c=>`"${String(c).replace(/"/g,'""')}"`).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv],{type:'text/csv'}));
+  a.download = `TMS_${v.row.plate}_${today()}.csv`; a.click();
+};
+
+/* ---------- Realtime ---------- */
+sb.channel('tms')
+  .on('postgres_changes',{event:'INSERT',schema:'public',table:'gps_logs'}, p=>{
+    const g = p.new, v = V[g.vehicle_id]; if(!v) return;
+    const prev = v.pos ? [v.pos.lat, v.pos.lng] : null;
+    v.pos = {...g, age_sec:0};
+    /* ทิศทาง: ใช้ heading จาก GPS ก่อน ถ้าไม่มีคำนวณจากจุดก่อนหน้า */
+    if(g.heading!=null) v.heading = g.heading;
+    else if(prev && (prev[0]!==g.lat||prev[1]!==g.lng)) v.heading = bearing(prev,[g.lat,g.lng]);
+    if(PAST[g.vehicle_id]) PAST[g.vehicle_id].push([g.lat,g.lng]);
+    renderMarkers(); renderVeh(); renderKpi();
+    if(sel===g.vehicle_id) drawNetwork();
+  })
+  .on('postgres_changes',{event:'*',schema:'public',table:'stops'}, ()=>{ loadAll(); loadAppr(); })
+  .subscribe();
+
+loadAll(); loadAppr();
+setInterval(()=>{ loadAll(); loadAppr(); }, 60000);   // sync เต็มทุก 1 นาที กันหลุด
+</script>
+</body>
+</html>
