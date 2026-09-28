@@ -12,7 +12,7 @@
 
 ### หน้าจอศูนย์ควบคุม
 <!-- ถ่ายจอ dashboard.html ตอนมีรถวิ่งจริง แล้ววางทับไฟล์ docs/dashboard.png -->
-<img width="1902" height="951" alt="pic" src="https://github.com/user-attachments/assets/d08d98cd-2b7a-4f85-a4b3-a01a3f67dcef" /
+<img width="1902" height="951" alt="pic" src="https://github.com/user-attachments/assets/093e2fc8-51b8-4140-8e91-377f351d9d3f" />
 
 ---
 
