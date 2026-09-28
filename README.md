@@ -12,12 +12,7 @@
 
 ### หน้าจอศูนย์ควบคุม
 <!-- ถ่ายจอ dashboard.html ตอนมีรถวิ่งจริง แล้ววางทับไฟล์ docs/dashboard.png -->
-<img width="1902" height="951" alt="pic" src="https://github.com/user-attachments/assets/d08d98cd-2b7a-4f85-a4b3-a01a3f67dcef" />
-
-
-### หน้าจอคนขับ (โหมดมืด / โหมดสว่าง)
-<!-- ถ่ายจอ driver.html จากมือถือ แล้ววางทับไฟล์ docs/driver.png -->
-![Driver app](docs/driver.png)
+<img width="1902" height="951" alt="pic" src="https://github.com/user-attachments/assets/d08d98cd-2b7a-4f85-a4b3-a01a3f67dcef" /
 
 ---
 
